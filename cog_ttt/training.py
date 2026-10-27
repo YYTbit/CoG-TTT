@@ -60,11 +60,11 @@ class VerifiedTarget:
 
 
 def contrast_preference(owner, graph, task_state, history, first, second, estimates, delta):
-    from .confidence import anytime_radius
+    from .confidence import credit_mean_radius
     if len(estimates) not in (2, 4) or any(not estimate.scores for estimate in estimates):
         raise ValueError("Continuation credit uses two observed legal outputs and an optional legal alternative graph")
     means = [estimate.mean for estimate in estimates]
-    radii = [anytime_radius(delta, estimate.identifier, len(estimate.scores)) for estimate in estimates]
+    radii = [credit_mean_radius(delta, estimate.identifier, len(estimate.scores)) for estimate in estimates]
     difference = means[0] - means[1]
     interaction = difference - (means[2] - means[3]) if len(estimates) == 4 else 0.0
     return Preference(owner, graph, task_state, history, first, second, difference, sum(radii[:2]),

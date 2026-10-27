@@ -30,6 +30,40 @@ def test_anytime_budget_and_persistent_identifiers():
         ConfidenceRegistry.restore(broken)
 
 
+def test_credit_radius_uses_the_same_budget_and_nested_mean_event():
+    from cog_ttt.confidence import credit_mean_radius
+    for identifier, count in [(1, 1), (2, 100), (31, 42)]:
+        expected = math.sqrt(math.log(2 / failure_allocation(0.05, identifier, count)) / (2 * count))
+        assert credit_mean_radius(0.05, identifier, count) == pytest.approx(expected)
+        assert 2 * credit_mean_radius(0.05, identifier, count) == pytest.approx(anytime_radius(0.05, identifier, count))
+
+
+def test_preference_training_can_receive_signal_within_the_paper_probe_cap(settings):
+    from cog_ttt.training import contrast_preference
+    first, second = Estimate(3, [1.0] * 80), Estimate(4, [0.0] * 80)
+    row = contrast_preference("shared", "graph", "state", "input", "yes", "no", [first, second], 0.05)
+    assert len(first.scores) + len(second.scores) < settings["search"]["max_probes"]
+    assert row.delta_radius < row.delta
+    assert row.weight("graph") > 0
+    owner = BinaryOwner()
+    result = train_program(owner, "graph", "state", [row], [], 1, 0.1,
+                           {**settings["training"], "lambda_verified": 0.0, "lambda_kl": 0.0})
+    assert result["status"] == "trained"
+    assert result["state"]["logit"] > 0
+    assert float(owner.logit.detach()) == 0
+
+
+def test_interaction_credit_radius_covers_each_of_the_four_means():
+    from cog_ttt.confidence import credit_mean_radius
+    from cog_ttt.training import contrast_preference
+    estimates = [Estimate(index + 1, [score] * 40) for index, score in enumerate([1.0, 0.0, 0.5, 0.5])]
+    row = contrast_preference("shared", "graph", "state", "input", "yes", "no", estimates, 0.05)
+    radii = [credit_mean_radius(0.05, estimate.identifier, 40) for estimate in estimates]
+    assert row.delta_radius == pytest.approx(sum(radii[:2]))
+    assert row.interaction == pytest.approx(1.0)
+    assert row.interaction_radius == pytest.approx(sum(radii))
+
+
 def test_residual_envelope_uses_anytime_radius_and_global_cover():
     graph = Graph(nodes=[{"name": "a", "cost": 0, "operation": "act", "kind": "tool"}])
     model = SignedModel(graph, coefficients=[0.2], bias=0.4)

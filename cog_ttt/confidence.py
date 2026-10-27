@@ -16,6 +16,13 @@ def anytime_radius(delta, identifier, count):
     return math.sqrt(2 / count * math.log(2 / level))
 
 
+def credit_mean_radius(delta, identifier, count):
+    level = failure_allocation(delta, identifier, count)
+    # Conditional Hoeffding for scores in [0,1], with the existing persistent allocation.
+    # Its event implies the wider direct interval, so this allocation is charged once.
+    return math.sqrt(math.log(2 / level) / (2 * count))
+
+
 @dataclass
 class Estimate:
     identifier: int

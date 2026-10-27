@@ -1,5 +1,6 @@
 import math
 from collections import defaultdict
+from decimal import Decimal, localcontext
 
 import numpy as np
 
@@ -51,7 +52,8 @@ def paired_interval(first, second, draws=10000, seed=0):
             "draws": int(draws), "stratified_by": "seed"}
 
 
-def summarize(records, baseline=None, draws=10000, bootstrap_seed=0, require_five_seeds=True):
+def summarize(records, baseline=None, draws=10000, bootstrap_seed=0, require_five_seeds=True,
+              mlgym_reference="No-TTT"):
     indexed = index_records(records)
     grouped, units = defaultdict(dict), {}
     for key, record in indexed.items():
@@ -85,8 +87,19 @@ def summarize(records, baseline=None, draws=10000, bootstrap_seed=0, require_fiv
             row["paired_interval"] = paired_interval(values, grouped[reference], draws, bootstrap_seed)
         output.append(row)
     if any(key[1] == "mlgym" for key in indexed):
-        output.extend(mlgym_wins(indexed, baseline or "No-TTT", require_five_seeds))
+        output.extend(mlgym_wins(indexed, mlgym_reference, require_five_seeds))
     return output
+
+
+def reported_metric_value(metric):
+    native_value(metric)
+    precision = metric.get("reported_precision")
+    if isinstance(precision, bool) or not isinstance(precision, int) or not 0 <= precision <= 15:
+        raise ValueError("MLGym comparisons declare reported_precision in the metric's original units")
+    value = Decimal(str(metric["value"]))
+    with localcontext() as context:
+        context.prec = max(32, len(value.as_tuple().digits) + max(0, value.adjusted()) + precision + 2)
+        return value.quantize(Decimal(1).scaleb(-precision))
 
 
 def mlgym_wins(indexed, baseline, require_five_seeds=True):
@@ -100,6 +113,7 @@ def mlgym_wins(indexed, baseline, require_five_seeds=True):
         metric = next(iter(record["metrics"].values()))
         if metric.get("direction") not in {"higher", "lower"}:
             raise ValueError("An MLGym task declares its native metric direction")
+        reported_metric_value(metric)
         grouped[(backbone, revision, method)][(seed, task)] = metric
     output = []
     for (backbone, revision, method), values in sorted(grouped.items()):
@@ -111,23 +125,32 @@ def mlgym_wins(indexed, baseline, require_five_seeds=True):
         seeds = sorted({seed for seed, task in values})
         if require_five_seeds and seeds != list(range(5)):
             raise ValueError("MLGym summaries use five seeds")
-        wins = []
+        credits, scores = [], []
+        task_sets = [{task for selected, task in values if selected == seed} for seed in seeds]
+        if any(tasks != task_sets[0] for tasks in task_sets):
+            raise ValueError("Every MLGym seed evaluates the same thirteen tasks")
         for seed in seeds:
             tasks = [task for selected, task in values if selected == seed]
             if len(tasks) != 13:
                 raise ValueError("Win13 compares all thirteen MLGym tasks")
-            count = 0
+            credit = 0.0
             for task in tasks:
                 first, second = values[(seed, task)], reference[(seed, task)]
                 if first["unit"] != second["unit"] or first["direction"] != second["direction"]:
                     raise ValueError("MLGym methods use the same native metric")
-                difference = native_value(first) - native_value(second)
-                count += int(difference > 0 if first["direction"] == "higher" else difference < 0)
-            wins.append(count)
+                if first["reported_precision"] != second["reported_precision"]:
+                    raise ValueError("MLGym methods use the same reported precision")
+                difference = reported_metric_value(first) - reported_metric_value(second)
+                if first["direction"] == "lower":
+                    difference = -difference
+                credit += 1.0 if difference > 0 else 0.5 if difference == 0 else 0.0
+            credits.append(credit)
+            scores.append(100 * credit / 13)
         output.append({"backbone": backbone, "benchmark": "mlgym", "revision": revision, "method": method,
-                       "metric": "Win13", "unit": "count", "mean": float(np.mean(wins)),
-                       "sample_std": float(np.std(wins, ddof=1)) if len(wins) > 1 else None,
-                       "seed_wins": dict(zip(seeds, wins))})
+                       "metric": "Win13", "unit": "percent", "mean": float(np.mean(scores)),
+                       "sample_std": float(np.std(scores, ddof=1)) if len(scores) > 1 else None,
+                       "seed_scores": dict(zip(seeds, scores)), "seed_credits": dict(zip(seeds, credits)),
+                       "tasks_per_seed": 13, "reference_method": baseline})
     return output
 
 

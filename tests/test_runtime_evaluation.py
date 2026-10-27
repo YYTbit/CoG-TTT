@@ -87,6 +87,38 @@ def test_training_pilot_uses_native_verified_feedback(tmp_path, model_case, sett
     assert session.versions.candidates["owner_update"]["state"]["logit"] > 0
 
 
+def test_replayed_node_histories_exclude_generation_telemetry(model_case):
+    from cog_ttt.execution import GraphExecutor
+    from cog_ttt.graph import Graph
+    from cog_ttt.storage import fingerprint
+
+    class MeteredOwner(BinaryOwner):
+        def __init__(self):
+            super().__init__()
+            self.calls = 0
+
+        def sample(self, history, seed=0, **settings):
+            self.calls += 1
+            return {**super().sample(history, seed, **settings), "usage": {"elapsed_seconds": self.calls}}
+
+    owner, worker = MeteredOwner(), LocalWorker()
+    graph = Graph(nodes=[{"name": name, "cost": 1, "operation": "respond", "owner": "shared"}
+                         for name in ("upstream", "response")],
+                  dependencies=[("upstream", "response")], terminals=["response"])
+    decision = graph.decision(["upstream", "response"])
+    executor = GraphExecutor(graph, {"shared": owner}, worker)
+    checkpoint = worker.checkpoint(model_case["task"])
+    anchor = executor.run(decision, checkpoint, 17, 2)
+    context = next(row["history"] for row in anchor["trace"] if row["node"] == "response")
+    injection = {"node": "response", "output": {"text": "yes", "token_ids": [1]}, "prefix_seed": 17,
+                 "history_fingerprint": fingerprint(context)}
+    replay = executor.run(decision, checkpoint, 91, 2, injection)
+    assert replay["feedback"]["score"] == 1
+    assert "usage" not in replay["outputs"]["upstream"]
+    assert "usage" in replay["trace"][0]["output"]
+    assert context == replay["trace"][1]["history"]
+
+
 def test_failed_probe_survives_resume_without_losing_its_charge(tmp_path, routing_case, settings):
     worker = LocalWorker()
     session = Session(routing_case, settings, worker, {}, tmp_path)

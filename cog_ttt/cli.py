@@ -27,6 +27,7 @@ def main():
     command.add_argument("--records", nargs="+", required=True)
     command.add_argument("--output", required=True)
     command.add_argument("--baseline")
+    command.add_argument("--mlgym-reference", default="No-TTT")
     command.add_argument("--draws", type=int, default=10000)
     command.add_argument("--bootstrap-seed", type=int, default=0)
     command.add_argument("--allow-partial-seeds", action="store_true")
@@ -37,7 +38,7 @@ def main():
             with open(filename) as stream:
                 records.extend(json.loads(line) for line in stream if line.strip())
         result = summarize(records, arguments.baseline, arguments.draws, arguments.bootstrap_seed,
-                           not arguments.allow_partial_seeds)
+                           not arguments.allow_partial_seeds, arguments.mlgym_reference)
         write_json(arguments.output, result)
         print(json.dumps({"metrics": len(result), "output": arguments.output}))
         return
