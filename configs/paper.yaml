@@ -1,0 +1,27 @@
+confidence:
+  delta: 0.05
+training:
+  kappa: 1.0
+  beta: 1.0
+  lambda_verified: 0.1
+  lambda_kl: 0.1
+  maximum_weight: 1.0
+  epsilon_z: 0.001
+  confidence_weights: true
+objective:
+  lambda_training: 1.0
+  lambda_execution: 1.0
+budget:
+  total_gpu_seconds: 25600.0
+search:
+  epsilon: 0.01
+  acceptance_tolerance: 0.01
+  screen_margin: 0.01
+  max_probes: 200
+  max_pilots: 8
+  split_seed: 0
+  # Execution choices; the paper leaves discretization and profile construction configurable.
+  max_graph_bits: 18
+  max_local_bits: 18
+  cross_partition_split: 0.5
+  refinement_tolerance: 0.01

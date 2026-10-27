@@ -1,0 +1,46 @@
+seeds: [0, 1, 2, 3, 4]
+paired_bootstrap_draws: 10000
+benchmarks:
+  marble:
+    scenarios: 5
+    online_observations: [communication_traces, legal_tool_feedback]
+    final_evaluation: official_task_and_collaboration_score
+  mlgym:
+    tasks: 13
+    online_observations: [authorized_logs, task_signals, local_execution_checks]
+    final_evaluation: native_metric_per_task
+    summary: wins_against_no_ttt
+  deepresearch:
+    queries: 100
+    online_observations: [retrieved_passages, provenance, citation_checks]
+    final_evaluation:
+      release: legacy_official
+      race_judge: Gemini-2.5-Pro
+      fact_judge: Gemini-2.5-Flash
+      evidence_citations: supported_statement_citation_pairs
+  toolhop:
+    queries: 995
+    online_observations: [tool_returns, api_validation, argument_errors]
+    final_evaluation: official_answer_and_tool_use_evaluation
+  webshop:
+    instructions: 500
+    online_observations: [page_observations, search_responses, item_attributes]
+    final_evaluation: official_instruction_reward
+  webwalkerqa:
+    questions: 680
+    online_observations: [navigation_results, retrieved_text, evidence_references]
+    final_evaluation: official_question_answer_evaluation
+  xbench-deepsearch:
+    release: "2505"
+    online_observations: [public_search_pages, tool_responses]
+    final_evaluation: official_scoring_protocol
+external_baselines:
+  - SDPO
+  - SDFT
+  - TTRL
+  - Future-Gain
+  - GTD
+  - GEPA
+  - ACE
+  - ReasoningBank
+  - LightMem
