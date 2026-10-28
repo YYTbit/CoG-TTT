@@ -99,6 +99,8 @@ def train_program(owner, graph, task_state, preferences, verified, steps, learni
         raise ValueError("Verified supervision and KL penalties are finite and nonnegative")
     preferences = [row for row in preferences if row.owner == owner.name and row.task_state == task_state]
     verified = [row for row in verified if row.owner == owner.name and row.graph == graph and row.task_state == task_state]
+    if settings.get("lambda_verified", 0.1) == 0:
+        verified = []
     weights = [row.weight(graph, settings.get("kappa", 1.0), settings.get("maximum_weight", 1.0),
                           settings.get("confidence_weights", True)) for row in preferences]
     retained = [(row, weight) for row, weight in zip(preferences, weights) if weight > 0]

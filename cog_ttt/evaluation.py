@@ -39,7 +39,7 @@ def paired_interval(first, second, draws=10000, seed=0):
     if isinstance(draws, bool) or int(draws) != draws or draws < 1:
         raise ValueError("The paired bootstrap uses a positive integer draw count")
     groups = defaultdict(list)
-    for (replicate, task), value in first.items():
+    for (replicate, task), value in sorted(first.items()):
         groups[replicate].append(value - second[(replicate, task)])
     generator = np.random.default_rng(seed)
     samples = np.zeros(int(draws))
@@ -104,13 +104,18 @@ def reported_metric_value(metric):
 
 def mlgym_wins(indexed, baseline, require_five_seeds=True):
     grouped = defaultdict(dict)
+    metric_names = {}
     for key, record in indexed.items():
         backbone, benchmark, revision, method, seed, task = key
         if benchmark != "mlgym":
             continue
         if len(record["metrics"]) != 1:
             raise ValueError("An MLGym task selects its native comparison metric")
-        metric = next(iter(record["metrics"].values()))
+        metric_name, metric = next(iter(record["metrics"].items()))
+        identity = (backbone, revision, seed, task)
+        if identity in metric_names and metric_names[identity] != metric_name:
+            raise ValueError("MLGym methods use the same native metric")
+        metric_names[identity] = metric_name
         if metric.get("direction") not in {"higher", "lower"}:
             raise ValueError("An MLGym task declares its native metric direction")
         reported_metric_value(metric)

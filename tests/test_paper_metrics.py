@@ -68,3 +68,11 @@ def test_win13_rejects_missing_or_inconsistent_reported_precision():
     records[0]["metrics"]["native"]["reported_precision"] = 4
     with pytest.raises(ValueError, match="same reported precision"):
         summarize(records)
+
+
+def test_win13_rejects_different_native_metric_names():
+    records = mlgym_records()
+    record = next(row for row in records if row["method"] == "CoG-TTT")
+    record["metrics"] = {"different_metric": record["metrics"]["native"]}
+    with pytest.raises(ValueError, match="same native metric"):
+        summarize(records)

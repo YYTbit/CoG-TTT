@@ -162,6 +162,19 @@ def test_unverified_targets_and_absent_signal_are_rejected(settings):
     assert result["status"] == "skipped_no_training_signal"
 
 
+def test_disabled_verified_loss_cannot_materialize_an_update(settings, monkeypatch):
+    owner = BinaryOwner()
+    row = VerifiedTarget("shared", "graph", "state", "input", "Return yes.", "yes",
+                         {"passed": True, "tool_result_id": "check", "task_state": "state", "source": "execution_check"})
+    def unexpected_sample(*arguments, **keywords):
+        pytest.fail("A program without training supervision should skip generation")
+    monkeypatch.setattr(owner, "sample", unexpected_sample)
+    result = train_program(owner, "graph", "state", [], [row], 2, 0.1,
+                           {**settings["training"], "lambda_verified": 0.0})
+    assert result == {"status": "skipped_no_training_signal", "steps": 0}
+    assert float(owner.logit.detach()) == 0
+
+
 def test_legal_group_interaction_cancels_singletons():
     from cog_ttt.measurements import group_interaction
     graph = Graph(nodes=[{"name": name, "cost": 0, "operation": "act", "kind": "tool"} for name in ("a", "b")])

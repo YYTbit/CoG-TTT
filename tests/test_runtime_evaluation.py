@@ -227,6 +227,15 @@ def test_native_metrics_and_paired_seed_bootstrap():
         paired_interval(first, dict(list(second.items())[1:]), draws=200)
 
 
+def test_paired_bootstrap_is_independent_of_record_order():
+    first = {(seed, str(task)): float((seed + 1) * task * task)
+             for seed in range(5) for task in range(7)}
+    second = dict.fromkeys(first, 0.0)
+    expected = paired_interval(first, second, draws=128, seed=17)
+    reordered = paired_interval(dict(reversed(list(first.items()))), second, draws=128, seed=17)
+    assert reordered == expected
+
+
 def test_summary_uses_sample_standard_deviation_and_excludes_fixtures():
     records = [{"stage": "final_evaluation", "backbone": "binary", "benchmark": "toolhop", "revision": "test",
                 "method": "method", "seed": seed, "task_id": "task", "data_kind": "benchmark",
