@@ -6,6 +6,10 @@ CoG-TTT jointly optimizes node-level training and evolving agentic graphs under 
 
 ![CoG-TTT overview](assets/overview.png)
 
+## Abstract
+
+Long-horizon Web research agents coordinate search, evidence verification, and tool use through evolving collaboration graphs. Their executions provide feedback for test-time training (TTT), yet unreliable training signals and uncertain downstream gains make node-level adaptation challenging. In particular, the value of a parameter update depends on how downstream nodes use its outputs, while improved node capabilities can reshape the optimal collaboration graph. Existing TTT methods focus on model adaptation, yet provide limited guidance for these coupled decisions. To address this challenge, we propose CoG-TTT, a graph-coupled method that jointly optimizes node-level training and evolving agentic graphs. Specifically, we compare feasible execution continuations to construct confidence-aware training signals, perform graph-conditioned parameter updates, and coordinate training and graph selection through witness-guided optimization. We further derive conditional bounds on joint decision quality and solve a graph-bound allocation subproblem exactly using dynamic programming, providing theoretical guidance for resource allocation. We evaluate CoG-TTT on seven public benchmarks using Qwen3-8B, Llama-3.1-8B-Instruct, and Gemma-3-12B-it. Across all three backbones, CoG-TTT improves over the strongest baseline for each of the eight native metrics by 4.87 on average. It also improves upon matched alternating optimization across the three backbones and reduces legal-probe costs by 52% at matched decision quality. Code is available at https://anonymous.4open.science/r/CoG-TTT-1F28/.
+
 ## Installation
 
 Requires Python 3.10 or later. Run the following commands from the repository root.
