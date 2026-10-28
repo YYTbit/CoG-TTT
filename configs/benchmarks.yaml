@@ -2,15 +2,18 @@ seeds: [0, 1, 2, 3, 4]
 paired_bootstrap_draws: 10000
 benchmarks:
   marble:
+    source: https://github.com/ulab-uiuc/MARBLE
     scenarios: 5
     online_observations: [communication_traces, legal_tool_feedback]
     final_evaluation: official_task_and_collaboration_score
   mlgym:
+    source: https://github.com/facebookresearch/MLGym
     tasks: 13
     online_observations: [authorized_logs, task_signals, local_execution_checks]
     final_evaluation: native_metric_per_task
     summary: wins_against_no_ttt
   deepresearch:
+    source: https://github.com/Ayanami0730/deep_research_bench
     queries: 100
     online_observations: [retrieved_passages, provenance, citation_checks]
     final_evaluation:
@@ -19,18 +22,22 @@ benchmarks:
       fact_judge: Gemini-2.5-Flash
       evidence_citations: supported_statement_citation_pairs
   toolhop:
+    source: https://huggingface.co/datasets/bytedance-research/ToolHop
     queries: 995
     online_observations: [tool_returns, api_validation, argument_errors]
     final_evaluation: official_answer_and_tool_use_evaluation
   webshop:
+    source: https://github.com/princeton-nlp/WebShop
     instructions: 500
     online_observations: [page_observations, search_responses, item_attributes]
     final_evaluation: official_instruction_reward
   webwalkerqa:
+    source: https://github.com/Alibaba-NLP/DeepResearch/tree/main/WebAgent/WebWalker
     questions: 680
     online_observations: [navigation_results, retrieved_text, evidence_references]
     final_evaluation: official_question_answer_evaluation
   xbench-deepsearch:
+    source: https://github.com/xbench-ai/xbench-evals
     release: "2505"
     online_observations: [public_search_pages, tool_responses]
     final_evaluation: official_scoring_protocol

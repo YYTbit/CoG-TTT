@@ -43,3 +43,11 @@ Final benchmark evaluation is a separate operation. Online training uses authori
 [Paper settings](configs/paper.yaml) contain the loss coefficients, failure budget, tolerances, and probe/pilot limits. [Backbone identifiers](configs/backbones.yaml) and the [benchmark protocol](configs/benchmarks.yaml) specify the three models and seven benchmarks. Learning rates, update scope, task graphs, decoding settings, and cost discretization are explicit execution inputs.
 
 The implementation includes legal graph constraints, graph-conditioned preference and verified-target losses, reversible parameter versions, anytime validation, residual certificates, signed interaction models, and partition-budget optimization. Run records retain the remaining decision gap, the evaluated-frontier gap, and costs for every attempted pilot, probe, verification, and execution.
+
+## Resources and release scope
+
+The release contains the method implementation, configurations, environment interface, executable protocol example, and software tests. Native benchmark environments and baseline implementations are obtained from their upstream projects. The benchmark case file connects the installed environment to CoG-TTT through the documented interface.
+
+The [benchmark configuration](configs/benchmarks.yaml) links the upstream resources, and the [backbone configuration](configs/backbones.yaml) lists the public checkpoint identifiers. Select environment and evaluator revisions that match the paper protocol. DeepResearch evaluation uses the specified legacy evaluator and judge models.
+
+Datasets, downloaded weights, runtime checkpoints, and generated results remain in local working directories.
