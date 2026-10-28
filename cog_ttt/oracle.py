@@ -50,17 +50,22 @@ def partition_profiles(graph, model, partitions, budget, execution_price=1.0, cr
     membership = {name: index for index, names in enumerate(partitions) for name in names}
     linear = [dict.fromkeys(names, 0.0) for names in partitions]
     internal = [[] for _ in partitions]
-    for feature, coefficient in zip(model.features, model.coefficients):
+    for index, (feature, coefficient) in enumerate(zip(model.features, model.coefficients)):
         first = feature.support[0]
         group = membership[first]
         if len(feature.support) == 1:
             linear[group][first] += coefficient
         elif membership[feature.support[1]] == group:
             internal[group].append((feature.support, coefficient))
-        elif coefficient > 0:
-            second = feature.support[1]
-            linear[group][first] += coefficient * cross_split
-            linear[membership[second]][second] += coefficient * (1 - cross_split)
+        else:
+            if model.calibration is not None:
+                coefficient += model.radii[index]
+                if not np.isfinite(coefficient):
+                    raise ValueError("Cross-partition calibration uses finite coefficient upper bounds")
+            if coefficient > 0:
+                second = feature.support[1]
+                linear[group][first] += coefficient * cross_split
+                linear[membership[second]][second] += coefficient * (1 - cross_split)
     profiles = []
     mandatory = {node.name for node in graph.nodes if node.required} | set(graph.terminals)
     for group, names in enumerate(partitions):
@@ -119,6 +124,7 @@ def graph_upper_bound(graph, model, certificate, budget, training_cost=0.0, trai
         raise ValueError("The relaxed family is infeasible at the supplied integer budget")
     result.update(upper=float(min(fallback, upper)), method="certified_partition_dp",
                   dp_value=float(upper), allocation=allocation["allocation"],
+                  cross_partition_coefficients=("calibrated_upper_bounds" if model.calibration else "fitted_values"),
                   profiles=[{"names": profile.names, "method": profile.method} for profile in profiles])
     active = {}
     for profile, available in zip(profiles, allocation["allocation"]):

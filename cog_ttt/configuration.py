@@ -71,4 +71,13 @@ def validate_case(case, configuration):
             raise ValueError("Search tolerances are finite and nonnegative")
     if not 0 < configuration["confidence"]["delta"] < 1 or not 0 <= settings["cross_partition_split"] <= 1:
         raise ValueError("Confidence and partition-split settings are within their declared domains")
+    if "calibration" in case:
+        from .calibration import calibration_plan
+        plan = calibration_plan(graph, case["calibration"], settings.get("features"),
+                                min(settings["execution_budget"], settings["total_budget"]))
+        if len(plan["decisions"]) * plan["repetitions"] > settings["max_probes"]:
+            raise ValueError("The development calibration fits the checkpoint's declared probe limit")
+        if any(graph.cost(decision) * settings["cost_quantum_gpu_seconds"] > budget["reserve_gpu_seconds"]
+               for decision in plan["decisions"]):
+            raise ValueError("The execution reserve covers the locked development configurations")
     return graph, initial, supplied, settings, budget

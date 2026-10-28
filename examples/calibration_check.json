@@ -1,0 +1,33 @@
+{
+  "benchmark": {"name": "protocol-fixture", "revision": "1", "data_kind": "software_fixture"},
+  "environment": {"command": ["python3", "-m", "cog_ttt.worker", "--factory", "examples.fixture:create"]},
+  "task": {"id": "calibration-check", "request": "Calibrate legal continuation effects in the software fixture."},
+  "seed": 0,
+  "owners": {},
+  "graph": {
+    "nodes": [
+      {"name": "source", "cost": 1, "operation": "constant", "kind": "tool", "required": true, "settings": {"value": 1}},
+      {"name": "alternative", "cost": 1, "operation": "constant", "kind": "tool", "settings": {"value": 2}},
+      {"name": "terminal", "cost": 1, "operation": "forward", "kind": "tool"}
+    ],
+    "routes": [
+      {"name": "direct", "source": "source", "target": "terminal"},
+      {"name": "revised", "source": "alternative", "target": "terminal"}
+    ],
+    "dependencies": [["source", "alternative"]],
+    "ports": [{"node": "terminal", "port": "input", "routes": ["direct", "revised"]}],
+    "exclusive": [["direct", "revised"]],
+    "terminals": ["terminal"]
+  },
+  "initial_graph": ["source", "terminal", "direct"],
+  "witnesses": [["source", "alternative", "terminal", "revised"]],
+  "programs": [],
+  "calibration": {
+    "graphs": [["source", "terminal", "direct"], ["source", "alternative", "terminal", "revised"]],
+    "repetitions": 2,
+    "residual_bound": 0.0
+  },
+  "search": {"features": [["revised"]], "max_probes": 8, "max_pilots": 0},
+  "objective": {"total_budget": 100, "execution_budget": 3, "cost_quantum_gpu_seconds": 1.0, "utility_per_cost_unit": 0.01},
+  "budget": {"total_gpu_seconds": 12.0, "reserve_gpu_seconds": 3.0, "pilot_gpu_seconds": 2.0, "verification_gpu_seconds": 1.0}
+}

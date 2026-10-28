@@ -3,6 +3,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .budget import BudgetExhausted, BudgetLedger
+from .calibration import calibration_plan, fit_calibration, validate_calibration
 from .confidence import ConfidenceRegistry
 from .configuration import validate_case
 from .execution import DeviceMeter, GraphExecutor
@@ -67,8 +68,13 @@ class Session:
             self.search.refinements = self.state.get("oracle_refinements", 0)
         if "fit_roles" in self.state:
             self.search.fit_roles = dict(self.state["fit_roles"])
+        self.calibration_plan = (calibration_plan(self.graph, case["calibration"], self.settings.get("features"),
+                                 min(self.settings["execution_budget"], self.settings["total_budget"]))
+                                 if "calibration" in case else None)
+        self.state.setdefault("calibrations", {})
         self.refresh_budget()
         self.recover_pending_probe()
+        self.attach_calibrations()
         self.save()
 
     def save(self):
@@ -115,7 +121,7 @@ class Session:
         if hasattr(self, "search"):
             self.search.operational_execution_budget = self.ledger.remaining / self.settings["cost_quantum_gpu_seconds"]
 
-    def probe(self, program, decision, injection=None, seed=None, stage="probe"):
+    def probe(self, program, decision, injection=None, seed=None, stage="probe", measurement=None):
         self.recover_pending_probe()
         if self.state["probe_count"] >= self.settings["max_probes"]:
             raise BudgetExhausted("The checkpoint's declared probe limit has been reached")
@@ -129,7 +135,8 @@ class Session:
         if not self.ledger.permits(bound):
             raise BudgetExhausted("A legal probe would consume the protected execution reserve")
         key = self.registry.key(self.checkpoint["task_state"], self.versions.version, program,
-                                decision.identifier, injection)
+                                decision.identifier, injection if measurement is None else
+                                {"injection": injection, "measurement": measurement})
         self.search.register_witness(decision)
         self.state["probe_count"] += 1
         seed = (int(self.case.get("seed", 0)) + 104729 * len(self.ledger.entries)) if seed is None else seed
@@ -170,6 +177,48 @@ class Session:
         self.state.pop("pending_probe_result")
         self.save()
         return result, estimate
+
+    def calibration_scope(self, program):
+        candidate = None if program == "null" else self.versions.candidates[program]["state_identity"]
+        return {"task_state": self.checkpoint["task_state"], "parameter_version": self.versions.version,
+                "program": program, "score_source": self.executor.score_source,
+                "parameter_identity": fingerprint({"accepted": self.versions.accepted_identities,
+                                                    "candidate": candidate})}
+
+    def attach_calibrations(self):
+        self.search.calibrations = {}
+        if self.calibration_plan is None:
+            return
+        for program in self.state["raw_costs"]:
+            key = f"{self.versions.version}:{program}"
+            record = self.state["calibrations"].get(key)
+            if record is not None:
+                validate_calibration(record, self.graph, self.calibration_plan, self.registry.delta,
+                                     self.calibration_scope(program))
+                self.search.calibrations[program] = record
+
+    def ensure_calibration(self):
+        if self.calibration_plan is None:
+            return
+        self.attach_calibrations()
+        plan = self.calibration_plan
+        measurement = {"kind": "development_calibration", "plan_identity": plan["identity"]}
+        for program in list(self.state["raw_costs"]):
+            if program in self.search.calibrations:
+                continue
+            rows = []
+            for decision in plan["decisions"]:
+                key = self.registry.key(self.checkpoint["task_state"], self.versions.version, program,
+                                        decision.identifier, {"injection": None, "measurement": measurement})
+                estimate = self.registry.entries[key]
+                while len(estimate.scores) < plan["repetitions"]:
+                    self.probe(program, decision, stage="calibration_probe", measurement=measurement)
+                rows.append((decision, estimate))
+            record = fit_calibration(self.graph, plan, rows, self.registry.delta, self.calibration_scope(program))
+            self.state["calibrations"][f"{self.versions.version}:{program}"] = record
+            self.search.calibrations[program] = record
+            write_json(self.directory / "calibration" / (fingerprint(record["scope"]) + ".json"), record)
+            self.save()
 
     def collect_credit(self, identifier, request):
         node = self.graph.node_map[request["node"]]
@@ -310,6 +359,7 @@ class Session:
         self.versions.accept(chosen["program"])
         self.state["raw_costs"] = {"null": 0.0}
         self.search.version = self.versions.version
+        self.search.calibrations = {}
         self.state["data_version"] = None
         self.save()
         return True
@@ -327,6 +377,9 @@ class Session:
         reason = "probe_limit"
         try:
             while self.state["probe_count"] < self.settings["max_probes"]:
+                self.ensure_calibration()
+                if self.state["probe_count"] >= self.settings["max_probes"]:
+                    break
                 if self.state["pilot_count"] < self.settings["max_pilots"]:
                     self.collect_data()
                 if self.materialize_next():
@@ -348,7 +401,8 @@ class Session:
         except BudgetExhausted:
             if any(entry.get("status") == "cost_bound_exceeded" for entry in self.ledger.entries):
                 raise
-            reason = "budget_exhausted"
+            reason = ("probe_limit" if self.state["probe_count"] >= self.settings["max_probes"]
+                      else "budget_exhausted")
         result = self.search.bounds(self.costs())
         accepted_pairs = [pair for pair in result["pairs"] if pair["program"] == "null"
                           and self.graph.cost(pair["graph"]) * self.settings["cost_quantum_gpu_seconds"] <= self.ledger.remaining]

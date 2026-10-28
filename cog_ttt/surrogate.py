@@ -31,6 +31,7 @@ class SignedModel:
         self.bias = float(bias)
         self.coefficients = np.zeros(len(self.features)) if coefficients is None else np.asarray(coefficients, dtype=float)
         self.radii = np.full(len(self.features), np.inf) if radii is None else np.asarray(radii, dtype=float)
+        self.calibration = None
         if self.coefficients.shape != (len(self.features),) or self.radii.shape != self.coefficients.shape:
             raise ValueError("Signed coefficient dimensions differ from their feature set")
         if not np.isfinite(self.bias) or not np.isfinite(self.coefficients).all() or np.any(np.isnan(self.radii)) or np.any(self.radii < 0):

@@ -22,6 +22,8 @@ class Node:
     required: bool = False
     partition: str | None = None
     settings: dict = field(default_factory=dict)
+    endpoint: str | None = None
+    route_rule: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,6 +70,9 @@ class Graph:
                 raise ValueError("Model operations declare their parameter owner")
             if not isinstance(node.operation, str) or not node.operation or not isinstance(node.settings, dict) or not isinstance(node.required, bool):
                 raise ValueError("Operations declare their name, settings mapping, and mandatory flag")
+            if any(value is not None and (not isinstance(value, str) or not value)
+                   for value in (node.partition, node.endpoint, node.route_rule)):
+                raise ValueError("Task endpoint, route rule, and partition labels are nonempty strings")
         for route in self.routes:
             if route.source not in self.node_map or route.target not in self.node_map:
                 raise ValueError("A route references an unknown operation")
@@ -187,7 +192,13 @@ class Graph:
         return affected | {route.name for route in self.routes if route.source in affected or route.target in affected}
 
     def partitions(self):
-        labels = {node.name: ("owner:" + node.owner if node.owner else "endpoint:" + (node.partition or node.name))
-                  for node in self.nodes}
+        labels = {}
+        for node in self.nodes:
+            if node.owner:
+                labels[node.name] = ("owner", node.owner)
+            elif node.partition:
+                labels[node.name] = ("partition", node.partition)
+            else:
+                labels[node.name] = ("endpoint", node.endpoint or node.name, node.route_rule or "")
         labels.update({route.name: labels[route.source] for route in self.routes})
         return [tuple(name for name in self.names if labels[name] == label) for label in sorted(set(labels.values()))]

@@ -2,6 +2,7 @@ import math
 
 import numpy as np
 
+from .calibration import apply_calibration
 from .confidence import Estimate
 from .graph import Decision
 from .oracle import graph_upper_bound
@@ -18,6 +19,7 @@ class JointSearch:
         self.partitions = graph.partitions()
         self.refinements = 0
         self.operational_execution_budget = None
+        self.calibrations = {}
         identifiers = sorted(self.witnesses)
         generator = np.random.default_rng(self.settings["split_seed"])
         generator.shuffle(identifiers)
@@ -50,12 +52,21 @@ class JointSearch:
             if decision.identifier not in self.fit_roles:
                 self.fit_roles[decision.identifier] = self.additional_fit_role(decision.identifier)
             (fit if self.fit_roles[decision.identifier] else validation).append((decision, estimate))
-        model = SignedModel(self.graph, features=self.settings.get("features"))
+        calibration = self.calibrations.get(program)
+        if calibration is not None and (calibration["scope"]["task_state"] != self.task_state
+                or calibration["scope"]["parameter_version"] != self.version
+                or calibration["scope"]["program"] != program):
+            raise ValueError("A signed model uses development calibration from its current task and parameter version")
+        model = SignedModel(self.graph, features=self.settings.get("features"),
+                            bias=calibration["bias"] if calibration else 0.0,
+                            coefficients=calibration["coefficients"] if calibration else None)
         if fit:
             model.fit(fit, self.registry.delta, self.settings.get("coefficient_residual_bound"))
+        if calibration is not None:
+            apply_calibration(model, calibration)
         feasible = None if self.complete_graphs is None else [decision for decision in self.complete_graphs
                     if self.graph.cost(decision) <= self.graph_budget(training_cost)]
-        certificate = residual_certificate(model, validation, self.registry.delta, feasible) if fit else None
+        certificate = residual_certificate(model, validation, self.registry.delta, feasible) if fit or calibration else None
         return model, certificate
 
     def bounds(self, costs):
@@ -168,4 +179,8 @@ class JointSearch:
                 "oracle_refinements": self.refinements,
                 "programs": {name: {"oracle": item["oracle"], "certificate": item["certificate"],
                                     "oracle_slack": item["slack"], "relaxation_gap": item["relaxation_gap"]}
-                             for name, item in result["programs"].items()}}
+                             for name, item in result["programs"].items()},
+                "calibration": {name: {"plan_identity": record["plan_identity"], "scope": record["scope"],
+                                       "configurations": len(record["observations"]),
+                                       "features": len(record["features"]), "residual_bound": record["residual_bound"]}
+                                for name, record in self.calibrations.items()}}

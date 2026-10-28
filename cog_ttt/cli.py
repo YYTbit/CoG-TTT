@@ -11,13 +11,13 @@ from .storage import read_json, write_json
 def main():
     parser = argparse.ArgumentParser(description="CoG-TTT: Joint Test-Time Training for Evolving Agentic Graphs")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "run", "evaluate"):
+    for name in ("check", "run", "calibrate", "evaluate"):
         command = subparsers.add_parser(name)
         command.add_argument("--case", required=True)
         command.add_argument("--config", default="configs/paper.yaml")
         if name != "check":
             command.add_argument("--output", required=True)
-        if name == "run":
+        if name in ("run", "calibrate"):
             command.add_argument("--resume", action="store_true")
         if name == "evaluate":
             command.add_argument("--run", required=True)
@@ -49,18 +49,26 @@ def main():
                           "initial_execution_cost": graph.cost(initial), "programs": len(case.get("programs", [])),
                           "data_kind": case["benchmark"]["data_kind"]}))
         return
+    if arguments.command == "calibrate" and "calibration" not in case:
+        parser.error("The calibration command requires a calibration plan in the case file")
     output = Path(arguments.output)
-    log = output / "environment.log" if arguments.command == "run" else output.with_suffix(".log")
+    log = output / "environment.log" if arguments.command in ("run", "calibrate") else output.with_suffix(".log")
     with NativeWorker(case["environment"]["command"], case["benchmark"], log,
                       case["environment"].get("timeout", 3600)) as worker:
-        if arguments.command == "run":
+        if arguments.command in ("run", "calibrate"):
             from .models import CausalOwner
             from .runtime import Session
             owners = {name: CausalOwner.from_pretrained(name, specification)
                       for name, specification in case.get("owners", {}).items()}
-            report = Session(case, configuration, worker, owners, output, arguments.resume).run()
-            print(json.dumps({"parameter_version": report["parameter_version"], "decision_gap": report["decision_gap"],
-                              "stopping_reason": report["stopping_reason"], "output": str(output)}))
+            session = Session(case, configuration, worker, owners, output, arguments.resume)
+            if arguments.command == "calibrate":
+                session.ensure_calibration()
+                print(json.dumps({"parameter_version": session.versions.version,
+                                  "calibrated_programs": len(session.search.calibrations), "output": str(output)}))
+            else:
+                report = session.run()
+                print(json.dumps({"parameter_version": report["parameter_version"], "decision_gap": report["decision_gap"],
+                                  "stopping_reason": report["stopping_reason"], "output": str(output)}))
         else:
             run = read_json(Path(arguments.run) / "result.json")
             if run["benchmark"] != case["benchmark"] or run["task"] != case["task"]:

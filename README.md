@@ -92,6 +92,25 @@ Prepare `task.json` following the [case schema](docs/environment.md). Specify th
 
 Graph costs use integer units with an explicit GPU-second conversion. The execution reserve covers the supplied witnesses. The [protocol example](examples/protocol_check.json) illustrates the case structure.
 
+### Calibration
+
+The case's `calibration` block declares a locked development graph set, repetition count, and structural residual bound. Legal contrasts identify the declared signed features. The runner calibrates each parameter version under the shared probe limit and compute budget.
+
+Run the CPU [calibration example](examples/calibration_check.json), then continue joint search from its saved state.
+
+```bash
+python -m cog_ttt calibrate \
+    --case examples/calibration_check.json \
+    --output results/calibration-check
+
+python -m cog_ttt run \
+    --case examples/calibration_check.json \
+    --output results/calibration-check \
+    --resume
+```
+
+For cases with a calibration plan, `run` also performs calibration automatically. See the [input requirements](docs/environment.md) for the feature design, residual assumption, and version checks.
+
 ## Run CoG-TTT
 
 Validate the configured task's graph and budgets, then start joint optimization.
