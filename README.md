@@ -63,8 +63,7 @@ python -m cog_ttt run --case task.json --config configs/paper.yaml \
   --output results/task
 ```
 
-`run` collects the configured calibration measurements before search. To resume
-a saved run, add `--resume` and use the same case and output directory.
+`run` collects the configured calibration measurements before search.
 
 ## Evaluation
 
