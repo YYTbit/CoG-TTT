@@ -20,14 +20,13 @@ Llama-3.1-8B-Instruct, and Gemma-3-12B-it. Across all three backbones, CoG-TTT
 improves over the strongest baseline for each of the eight native metrics by
 4.87 on average. It also improves upon matched alternating optimization across
 the three backbones and reduces legal-probe costs by 52% at matched decision
-quality. Code is available at <https://anonymous.4open.science/r/CoG-TTT-1F28/>.
+quality.
 
 ![CoG-TTT overview](assets/overview.png)
 
 ## Installation
 
-Use Python 3.10 or later and a PyTorch build appropriate for the execution
-hardware.
+Use Python 3.10 or later and install PyTorch for your system.
 
 ```bash
 python -m venv .venv
@@ -39,73 +38,24 @@ export HF_ENDPOINT=https://hf-mirror.com
 
 ## Quick start
 
-The CPU software fixture exercises legal graph execution and persistent run
-state.
+Run the included graph example:
 
 ```bash
 python -m cog_ttt check --case examples/protocol_check.json
 python -m cog_ttt run --case examples/protocol_check.json \
-  --output results/protocol-check
+  --output results/example
 ```
 
-The selected execution and decision report are written to `result.json`.
+The output is saved to `results/example/result.json`.
 
-## Task preparation
+## Running on a benchmark
 
-Choose a profile from [configs/backbones.yaml](configs/backbones.yaml), pin its
-model revision, and place it under `owners` in the task case. Complete the
-provider's access requirements for gated checkpoints.
+Prepare `task.json` with your model checkpoint, environment adapter, graph, and
+calibration inputs. The [environment guide](docs/environment.md) describes the
+case format and adapter interface. Model profiles and benchmark resources are in
+[configs/](configs).
 
-| Backbone | Checkpoint |
-| --- | --- |
-| Qwen3-8B | `Qwen/Qwen3-8B` |
-| Llama-3.1-8B-Instruct | `meta-llama/Llama-3.1-8B-Instruct` |
-| Gemma-3-12B-it | `google/gemma-3-12b-it` |
-
-Owners use full-parameter updates by default. Optional LoRA specifications are
-documented in the [environment reference](docs/environment.md).
-
-Install the chosen benchmark from the upstream resources in
-[configs/benchmarks.yaml](configs/benchmarks.yaml). Supply a Python factory
-implementing task checkpointing, prompts, tools, authorized continuation scores,
-and independent final evaluation.
-
-```bash
-python -m cog_ttt.worker --factory task_adapter:create --config environment.json
-```
-
-`task_adapter:create` and `environment.json` are supplied by the task
-integration. Set `environment.command` to the worker's argument list. The runner
-starts the process.
-
-Prepare `task.json` using the [case schema](docs/environment.md). It declares
-benchmark and model revisions, public task input, legal graphs, training
-programs, and budgets. Integer graph costs have explicit GPU-second and utility
-conversions; the execution reserve covers supplied witnesses.
-
-## Calibration
-
-Declare the locked development graphs, repetitions, and a valid structural
-residual bound in `calibration`. Legal contrasts identify the signed features.
-Calibration is refreshed for each parameter version and consumes the shared
-probe and compute budgets.
-
-Run the included calibration software fixture and continue from its saved state.
-
-```bash
-python -m cog_ttt calibrate --case examples/calibration_check.json \
-  --output results/calibration-check
-
-python -m cog_ttt run --case examples/calibration_check.json \
-  --output results/calibration-check --resume
-```
-
-`run` performs this stage automatically for cases with a calibration plan. The
-reference specifies feature identifiability and residual assumptions.
-
-## Joint optimization
-
-Validate the configured case and start the method.
+Validate the task and start joint optimization:
 
 ```bash
 python -m cog_ttt check --case task.json --config configs/paper.yaml
@@ -113,21 +63,12 @@ python -m cog_ttt run --case task.json --config configs/paper.yaml \
   --output results/task
 ```
 
-Resume with the same case, configuration, model checkpoints, and output
-directory.
-
-```bash
-python -m cog_ttt run --case task.json --config configs/paper.yaml \
-  --output results/task --resume
-```
-
-Run state retains parameter versions, confidence observations, and charged work.
-The final report includes the executable incumbent, decision gap, and stopping
-reason.
+`run` collects the configured calibration measurements before search. To resume
+a saved run, add `--resume` and use the same case and output directory.
 
 ## Evaluation
 
-Score the completed execution through the native final evaluator.
+Evaluate the final execution and summarize the scores:
 
 ```bash
 python -m cog_ttt evaluate --case task.json --run results/task \
@@ -137,35 +78,11 @@ python -m cog_ttt summarize --records results/final.jsonl \
   --output results/summary.json
 ```
 
-Collect complete task records over seeds 0–4. Summaries report means and sample
-standard deviations; MLGym requires matching No-TTT records. Paired comparisons
-use matching task identities and native units.
+## Tests
 
 ```bash
-python -m cog_ttt summarize \
-  --records results/final.jsonl results/baseline.jsonl \
-  --baseline No-TTT --draws 10000 --output results/paired-summary.json
+python -m pytest -q
 ```
-
-## Configuration
-
-| File | Contents |
-| --- | --- |
-| [configs/paper.yaml](configs/paper.yaml) | Loss, confidence, search, and budget defaults |
-| [configs/backbones.yaml](configs/backbones.yaml) | Model checkpoint and execution specifications |
-| [configs/benchmarks.yaml](configs/benchmarks.yaml) | Benchmark resources and native evaluation protocols |
-
-Task-specific objectives, budgets, and search overrides belong in the case file.
-Method settings are selected through `--config`.
-
-## Software checks
-
-```bash
-CUDA_VISIBLE_DEVICES='' python -m pytest -q
-```
-
-The CPU suite checks graph bounds, training gradients, calibration, version
-restoration, and evaluation accounting.
 
 ## License
 
