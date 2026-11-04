@@ -31,22 +31,10 @@ Use Python 3.10 or later and install PyTorch for your system.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e '.[models,test]' \
+python -m pip install -e '.[models]' \
   --index-url https://pypi.tuna.tsinghua.edu.cn/simple
 export HF_ENDPOINT=https://hf-mirror.com
 ```
-
-## Quick start
-
-Run the included graph example:
-
-```bash
-python -m cog_ttt check --case examples/protocol_check.json
-python -m cog_ttt run --case examples/protocol_check.json \
-  --output results/example
-```
-
-The output is saved to `results/example/result.json`.
 
 ## Running on a benchmark
 
@@ -55,10 +43,9 @@ calibration inputs. The [environment guide](docs/environment.md) describes the
 case format and adapter interface. Model profiles and benchmark resources are in
 [configs/](configs).
 
-Validate the task and start joint optimization:
+Start joint optimization:
 
 ```bash
-python -m cog_ttt check --case task.json --config configs/paper.yaml
 python -m cog_ttt run --case task.json --config configs/paper.yaml \
   --output results/task
 ```
@@ -75,12 +62,6 @@ python -m cog_ttt evaluate --case task.json --run results/task \
 
 python -m cog_ttt summarize --records results/final.jsonl \
   --output results/summary.json
-```
-
-## Tests
-
-```bash
-python -m pytest -q
 ```
 
 ## License

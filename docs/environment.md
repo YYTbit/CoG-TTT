@@ -27,7 +27,7 @@ A verified target carries `passed: true`, a native `tool_result_id`, the matchin
 
 ## Case files
 
-[The execution example](../examples/protocol_check.json) provides a complete executable schema. Benchmark cases use `data_kind: benchmark`, a benchmark identifier from [the protocol](../configs/benchmarks.yaml), and a pinned release in `revision`.
+Benchmark cases use `data_kind: benchmark`, a benchmark identifier from [the protocol](../configs/benchmarks.yaml), and a pinned release in `revision`. Configure the environment command, task, and method inputs as follows.
 
 - `owners` maps owner identifiers to model specifications from [the backbone configuration](../configs/backbones.yaml). Models default to full-parameter updates. An optional `adaptation` mapping accepts `kind: lora` with explicit `rank`, `scale`, and `target_modules`. Shared operations refer to the same owner.
 - `graph` declares nodes, eligible routes, dependencies, required input ports, exclusive route groups, terminals, and optional linear constraints. Each operation names a native tool or model role. Costs are nonnegative integers in the declared cost quantum. Shared owners form ownership partitions. Tool nodes can declare `endpoint` and `route_rule` for task-based grouping, or an explicit `partition` label. Routing bits inherit their producer's group.
@@ -39,7 +39,7 @@ A verified target carries `passed: true`, a native `tool_result_id`, the matchin
 
 ## Development calibration
 
-A `calibration` mapping locks the development graph configurations before observation. The [calibration example](../examples/calibration_check.json) provides a complete runnable case.
+A `calibration` mapping locks the development graph configurations before observation.
 
 | Field | Meaning |
 | --- | --- |
@@ -48,7 +48,7 @@ A `calibration` mapping locks the development graph configurations before observ
 | `calibration.residual_bound` | Finite nonnegative structural bound on the signed model's residual over the feasible graph family |
 | `search.features` | Declared singleton or pair supports; the development contrasts identify every included coefficient |
 
-The design has entries `D[i,j] = psi_j(x_i) - psi_j(x_0)`. Its column rank equals the number of declared features. Legality, rank, probe allowance, and execution reserve are checked before model loading. Graph constraints can make feature columns dependent; declare an independent basis for that graph family. The example's residual bound is zero because its score is exactly linear in the selected route bit.
+The design has entries `D[i,j] = psi_j(x_i) - psi_j(x_0)`. Its column rank equals the number of declared features. Legality, rank, probe allowance, and execution reserve are checked before model loading. Graph constraints can make feature columns dependent; declare an independent basis for that graph family. The residual bound describes the declared graph family under the measured task and parameter state.
 
 At each frozen checkpoint, calibration measures the predeclared continuation score for the locked configurations. It uses separate observation keys in the same persistent confidence registry as search and training credit. The first declared observation prefix is frozen. For contrast pseudoinverse `D^+`, the coefficient estimator has mean weights `A = [-D^+ 1, D^+]`. Each coefficient radius is the corresponding row of `abs(A) @ (r + residual_bound)`, where `r` contains the paper's anytime radii for those mean identifiers. Combining the shared-reference weights retains the cancellation in a four-configuration interaction.
 

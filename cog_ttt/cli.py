@@ -11,12 +11,11 @@ from .storage import read_json, write_json
 def main():
     parser = argparse.ArgumentParser(description="CoG-TTT: Joint Test-Time Training for Evolving Agentic Graphs")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    for name in ("check", "run", "calibrate", "evaluate"):
+    for name in ("run", "calibrate", "evaluate"):
         command = subparsers.add_parser(name)
         command.add_argument("--case", required=True)
         command.add_argument("--config", default="configs/paper.yaml")
-        if name != "check":
-            command.add_argument("--output", required=True)
+        command.add_argument("--output", required=True)
         if name in ("run", "calibrate"):
             command.add_argument("--resume", action="store_true")
         if name == "evaluate":
@@ -43,12 +42,7 @@ def main():
         print(json.dumps({"metrics": len(result), "output": arguments.output}))
         return
     case, configuration = read_configuration(arguments.case), read_configuration(arguments.config)
-    graph, initial, witnesses, settings, budget = validate_case(case, configuration)
-    if arguments.command == "check":
-        print(json.dumps({"valid": True, "operations": len(graph.nodes), "routes": len(graph.routes),
-                          "initial_execution_cost": graph.cost(initial), "programs": len(case.get("programs", [])),
-                          "data_kind": case["benchmark"]["data_kind"]}))
-        return
+    validate_case(case, configuration)
     if arguments.command == "calibrate" and "calibration" not in case:
         parser.error("The calibration command requires a calibration plan in the case file")
     output = Path(arguments.output)

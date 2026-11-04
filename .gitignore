@@ -55,3 +55,7 @@ notes/
 *.tar
 *.tar.gz
 *.tgz
+/tests/
+/examples/calibration_check.json
+/examples/fixture.py
+/examples/protocol_check.json
