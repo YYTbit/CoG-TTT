@@ -22,7 +22,19 @@ improves over the strongest baseline for each of the eight native metrics by
 the three backbones and reduces legal-probe costs by 52% at matched decision
 quality.
 
+## Method
+
+To couple node adaptation with executable graph evolution, we optimize their shared downstream utility. CoG-TTT first constructs legal graph-dependent supervision, then proposes node updates, and finally selects parameter versions and collaboration graphs using certified decision bounds.
+
 ![CoG-TTT overview](assets/overview.png)
+
+**Figure 1.** Graph-coupled adaptation during Web misinformation research, illustrated with a DeepResearch Bench question on need for closure and misinformation acceptance. Citation tracing supplies evidence for downstream analysis. Paired continuations guide node training, while joint selection updates the execution graph for subsequent research stages.
+
+## Main Results
+
+**Table 1.** Results on seven complete public benchmarks. Cells show five-seed mean ± sample standard deviation. Bold marks the best mean within each backbone. Win13 compares MLGym outcomes with No TTT; all columns favor higher values.
+
+![Main results from Table 1](assets/main_results.png)
 
 ## Installation
 
