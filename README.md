@@ -40,21 +40,9 @@ To couple node adaptation with executable graph evolution, we optimize their sha
 
 ![Main results from Table 1](assets/main_results.png)
 
-### Ablation Study
+**CoG-TTT improves performance across model families.** Table 1 reports the highest mean in all 27 metric–backbone combinations. Across eight native metrics, the mean improvements over the strongest baseline in each column are 5.24 on Qwen3-8B, 4.50 on Llama, and 4.86 on Gemma. Their aggregate improvement of 4.87 supports the benefit of joint adaptation across backbone families.
 
-**Table 2.** Component ablations across three backbones. Metrics and uncertainty follow Table 1. Each variant changes the specified training or graph mechanism; No TTT provides the Win13 reference.
-
-![Component ablations from Table 2](assets/ablations.png)
-
-**Joint selection improves upon alternating optimization.** Using the same loss and feasible family, CoG-TTT improves the eight-metric average by 2.9 on Qwen3-8B, 2.6 on Gemma, and 2.4 on Llama. Joint validation can select an update whose benefit emerges in a different future graph, which helps explain the remaining advantage over sequential training and graph selection.
-
-### Analysis
-
-![Analysis from Figure 2](assets/analysis.png)
-
-**Figure 2.** Qwen3-8B diagnostics of witness ranking, decision gaps, interval coverage, and credit-decile gain. Curves show five-seed means; bands show one sample standard deviation.
-
-**Reliable credit tracks downstream benefit.** Figure 2c reports final interval coverage of 95.0%, 90.0%, and 85.0% for the three methods, respectively. CoG-TTT reaches the nominal 95% level under the stated certificate conditions. Figure 2d orders records by interaction credit. Its highest decile yields a gain of 3.41, compared with 0.18 in the lowest decile, with Spearman correlation 0.91. This alignment supports prioritizing records whose estimated effects survive subsequent execution.
+**Web tasks benefit across research and interaction.** On Qwen3-8B, MARBLE KPI increases from 56.1 to 61.4 and RACE from 36.7 to 44.4. ToolHop accuracy rises from 49.4 to 52.4, with a paired 95% interval of [2.1, 3.9] for the gain; WebShop reward rises from 52.6 to 58.7, with an interval of [5.3, 6.9]. These tasks link intermediate evidence or actions to subsequent decisions. Their improvements are consistent with evaluating node updates through the continuations that use their outputs.
 
 ## Getting Started
 
