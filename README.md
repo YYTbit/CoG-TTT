@@ -22,21 +22,34 @@ improves over the strongest baseline for each of the eight native metrics by
 the three backbones and reduces legal-probe costs by 52% at matched decision
 quality.
 
-## Method
+## Algorithm Flow
 
-To couple node adaptation with executable graph evolution, we optimize their shared downstream utility. CoG-TTT first constructs legal graph-dependent supervision, then proposes node updates, and finally selects parameter versions and collaboration graphs using certified decision bounds.
+The joint procedure coordinates candidate generation, certified graph search, and budget-aware execution.
+
+1. Initialize null program, feasible incumbent, and execution reserve.
+2. While a legal probe or pilot fits the remaining budget, propose graphs and graph-conditioned training programs. Materialize updates on reversible copies; charge their costs.
+3. Validate legal pairs and update anytime score intervals. Build certified graph bounds or range fallbacks. Select the feasible program-graph pair with the largest lower score bound and compute the reported gap.
+4. Screen candidates using certified bounds. Stop when the gap is within tolerance and the declared family is complete.
+5. If the candidate passes conservative acceptance, accept its version and invalidate affected graph intervals. Otherwise, retain the accepted parameters and probe the next legal witness.
+6. Execute a feasible continuation and report the gap and all costs.
 
 ![CoG-TTT overview](assets/overview.png)
 
 **Figure 1.** Graph-coupled adaptation during Web misinformation research, illustrated with a DeepResearch Bench question on need for closure and misinformation acceptance. Citation tracing supplies evidence for downstream analysis. Paired continuations guide node training, while joint selection updates the execution graph for subsequent research stages.
 
-## Main Results
+## Results
 
 **Table 1.** Results on seven complete public benchmarks. Cells show five-seed mean ± sample standard deviation. Bold marks the best mean within each backbone. Win13 compares MLGym outcomes with No TTT; all columns favor higher values.
 
 ![Main results from Table 1](assets/main_results.png)
 
-## Installation
+**CoG-TTT improves performance across model families.** Table 1 reports the highest mean in all 27 metric–backbone combinations. Across eight native metrics, the mean improvements over the strongest baseline in each column are 5.24 on Qwen3-8B, 4.50 on Llama, and 4.86 on Gemma. Their aggregate improvement of 4.87 supports the benefit of joint adaptation across backbone families.
+
+**Web tasks benefit across research and interaction.** On Qwen3-8B, MARBLE KPI increases from 56.1 to 61.4 and RACE from 36.7 to 44.4. ToolHop accuracy rises from 49.4 to 52.4, with a paired 95% interval of [2.1, 3.9] for the gain; WebShop reward rises from 52.6 to 58.7, with an interval of [5.3, 6.9]. These tasks link intermediate evidence or actions to subsequent decisions. Their improvements are consistent with evaluating node updates through the continuations that use their outputs.
+
+## Getting Started
+
+### Environment Setup
 
 Use Python 3.10 or later and install PyTorch for your system.
 
@@ -48,23 +61,21 @@ python -m pip install -e '.[models]' \
 export HF_ENDPOINT=https://hf-mirror.com
 ```
 
-## Running on a benchmark
+### Data Preparation
 
-Prepare `task.json` with your model checkpoint, environment adapter, graph, and
-calibration inputs. The [environment guide](docs/environment.md) describes the
-case format and adapter interface. Model profiles and benchmark resources are in
-[configs/](configs).
+Prepare `task.json` with the model checkpoint, environment adapter, graph, and
+calibration inputs, following the [environment guide](docs/environment.md).
+Model profiles and benchmark resources are in [configs/](configs).
 
-Start joint optimization:
+### Training and Evaluation
+
+Run joint optimization. The command collects the configured calibration
+measurements before search:
 
 ```bash
 python -m cog_ttt run --case task.json --config configs/paper.yaml \
   --output results/task
 ```
-
-`run` collects the configured calibration measurements before search.
-
-## Evaluation
 
 Evaluate the final execution and summarize the scores:
 
