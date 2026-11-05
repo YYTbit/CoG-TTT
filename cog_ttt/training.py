@@ -110,11 +110,11 @@ def train_program(owner, graph, task_state, preferences, verified, steps, learni
     parameters = [parameter for parameter in owner.parameters() if parameter.requires_grad]
     if not parameters:
         raise ValueError("A training program has no declared trainable parameters")
+    optimizer = torch.optim.SGD(parameters, lr=learning_rate)
     history = []
     try:
         for step in range(int(steps)):
-            for parameter in parameters:
-                parameter.grad = None
+            optimizer.zero_grad(set_to_none=True)
             contexts = [row.history for row, _ in retained] + [row.history for row in verified]
             samples, reference = [], []
             if settings.get("lambda_kl", 0.1) > 0:
@@ -151,18 +151,14 @@ def train_program(owner, graph, task_state, preferences, verified, steps, learni
             loss.backward()
             if any(parameter.grad is not None and not torch.isfinite(parameter.grad).all() for parameter in parameters):
                 raise ValueError("Candidate gradients are nonfinite")
-            with torch.no_grad():
-                for parameter in parameters:
-                    if parameter.grad is not None:
-                        parameter.add_(parameter.grad, alpha=-learning_rate)
+            optimizer.step()
             history.append({"step": step + 1, "loss": float(loss.detach()),
                             "preference_loss": float(preference.detach()), "verified_loss": float(supervised.detach()),
                             "sampled_sequence_kl": float(divergence.detach()), "learning_rate": learning_rate})
         candidate = owner.snapshot()
     finally:
         owner.restore(accepted)
-        for parameter in parameters:
-            parameter.grad = None
+        optimizer.zero_grad(set_to_none=True)
     return {"status": "trained", "steps": int(steps), "state": candidate, "history": history,
             "weighted_preferences": len(retained), "verified_targets": len(verified),
             "kl_estimator": "current_policy_sequence_samples_with_score_function_gradient"}

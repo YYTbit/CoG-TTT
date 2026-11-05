@@ -1,3 +1,4 @@
+import inspect
 import os
 import tempfile
 import uuid
@@ -11,12 +12,19 @@ class CausalOwner:
         self.name, self.model, self.tokenizer = name, model, tokenizer
         self.settings = dict(settings or {})
         self.model.eval()
+        base = model.get_base_model() if hasattr(model, "get_base_model") else model
+        self.supports_logit_limit = "logits_to_keep" in inspect.signature(base.forward).parameters
         self.latest_usage = {}
 
     @classmethod
-    def from_pretrained(cls, name, specification):
+    def from_pretrained(cls, name, specification, seed=0):
         import torch
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText, AutoTokenizer
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForImageTextToText, AutoTokenizer, set_seed
+        selected_seed = specification.get("seed", seed)
+        if (isinstance(selected_seed, bool) or not isinstance(selected_seed, int)
+                or not 0 <= selected_seed < 2 ** 32):
+            raise ValueError("Model initialization uses an integer seed in [0, 2**32)")
+        set_seed(selected_seed)
         checkpoint = specification["checkpoint"]
         revision = specification.get("revision")
         configuration = AutoConfig.from_pretrained(checkpoint, revision=revision)
@@ -28,8 +36,11 @@ class CausalOwner:
         adaptation = specification.get("adaptation", {"kind": "full"})
         if adaptation["kind"] == "lora":
             from peft import LoraConfig, get_peft_model
+            targets = adaptation["target_modules"]
+            excluded = (r"(?!.*language_model\.).*"
+                        if configuration.model_type == "gemma3" and isinstance(targets, list) else None)
             model = get_peft_model(model, LoraConfig(r=int(adaptation["rank"]), lora_alpha=adaptation["scale"],
-                                                     target_modules=adaptation["target_modules"],
+                                                     target_modules=targets, exclude_modules=excluded,
                                                      lora_dropout=0.0, task_type="CAUSAL_LM"))
         elif adaptation["kind"] == "full":
             model.requires_grad_(True)
@@ -87,8 +98,12 @@ class CausalOwner:
             raise ValueError("A complete training sequence exceeds the declared context window")
         device = self.model.get_input_embeddings().weight.device
         identifiers = torch.tensor([prompt + generated], dtype=torch.long, device=device)
-        output = self.model(input_ids=identifiers, attention_mask=torch.ones_like(identifiers), use_cache=False)
-        logits = output.logits[0, len(prompt) - 1:len(prompt) + len(generated) - 1].float()
+        arguments = {"input_ids": identifiers, "attention_mask": torch.ones_like(identifiers), "use_cache": False}
+        if self.supports_logit_limit:
+            arguments["logits_to_keep"] = len(generated) + 1
+        output = self.model(**arguments)
+        # Prompt logits do not contribute to the sequence likelihood or its gradient.
+        logits = output.logits[0, -len(generated) - 1:-1].float()
         labels = torch.tensor(generated, dtype=torch.long, device=logits.device)
         return torch.log_softmax(logits, dim=-1).gather(1, labels[:, None]).sum()
 

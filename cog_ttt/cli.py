@@ -2,10 +2,9 @@ import argparse
 import json
 from pathlib import Path
 
-from .configuration import read_configuration, validate_case
+from .configuration import read_configuration
 from .evaluation import summarize
-from .native import NativeWorker
-from .storage import read_json, write_json
+from .storage import write_json
 
 
 def main():
@@ -13,15 +12,17 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
     for name in ("run", "calibrate", "evaluate"):
         command = subparsers.add_parser(name)
-        command.add_argument("--case", required=True)
+        command.add_argument("--case", required=name != "evaluate")
         command.add_argument("--config", default="configs/paper.yaml")
+        command.add_argument("--backbone", choices=("qwen", "llama", "gemma"))
+        command.add_argument("--backbones", default="configs/backbones.yaml")
         command.add_argument("--output", required=True)
         if name in ("run", "calibrate"):
+            command.add_argument("--seed", type=int)
             command.add_argument("--resume", action="store_true")
-        if name == "evaluate":
+        else:
             command.add_argument("--run", required=True)
             command.add_argument("--method", default="CoG-TTT")
-            command.add_argument("--backbone", required=True)
     command = subparsers.add_parser("summarize")
     command.add_argument("--records", nargs="+", required=True)
     command.add_argument("--output", required=True)
@@ -41,41 +42,24 @@ def main():
         write_json(arguments.output, result)
         print(json.dumps({"metrics": len(result), "output": arguments.output}))
         return
-    case, configuration = read_configuration(arguments.case), read_configuration(arguments.config)
-    validate_case(case, configuration)
-    if arguments.command == "calibrate" and "calibration" not in case:
-        parser.error("The calibration command requires a calibration plan in the case file")
-    output = Path(arguments.output)
-    log = output / "environment.log" if arguments.command in ("run", "calibrate") else output.with_suffix(".log")
-    with NativeWorker(case["environment"]["command"], case["benchmark"], log,
-                      case["environment"].get("timeout", 3600)) as worker:
-        if arguments.command in ("run", "calibrate"):
-            from .models import CausalOwner
-            from .runtime import Session
-            owners = {name: CausalOwner.from_pretrained(name, specification)
-                      for name, specification in case.get("owners", {}).items()}
-            session = Session(case, configuration, worker, owners, output, arguments.resume)
-            if arguments.command == "calibrate":
-                session.ensure_calibration()
-                print(json.dumps({"parameter_version": session.versions.version,
-                                  "calibrated_programs": len(session.search.calibrations), "output": str(output)}))
-            else:
-                report = session.run()
-                print(json.dumps({"parameter_version": report["parameter_version"], "decision_gap": report["decision_gap"],
-                                  "stopping_reason": report["stopping_reason"], "output": str(output)}))
-        else:
-            run = read_json(Path(arguments.run) / "result.json")
-            if run["benchmark"] != case["benchmark"] or run["task"] != case["task"]:
-                raise ValueError("Final evaluation matches the completed task and benchmark release")
-            evaluation = worker.call("final_evaluate", task=case["task"], execution=run["execution"])
-            record = {"stage": "final_evaluation", "data_kind": case["benchmark"]["data_kind"],
-                      "benchmark": case["benchmark"]["name"], "revision": case["benchmark"]["revision"],
-                      "task_id": case["task"]["id"], "seed": run["seed"], "method": arguments.method,
-                      "backbone": arguments.backbone, "metrics": evaluation["metrics"],
-                      "evaluator": evaluation.get("evaluator", worker.description)}
-            from .storage import append_json
-            append_json(output, record)
-            print(json.dumps({"stage": "final_evaluation", "output": str(output)}))
+    from .workflows import evaluate_run, run_case
+
+    case = read_configuration(arguments.case) if arguments.case else None
+    if arguments.command == "evaluate":
+        manifest_exists = (Path(arguments.run) / "run.json").is_file()
+        configuration = None if manifest_exists else read_configuration(arguments.config)
+        backbones = {} if manifest_exists else read_configuration(arguments.backbones)
+        evaluate_run(arguments.run, arguments.output, case=case, configuration=configuration,
+                     backbone=arguments.backbone, backbones=backbones, method=arguments.method)
+        print(json.dumps({"stage": "final_evaluation", "output": arguments.output}))
+        return
+    report = run_case(case, read_configuration(arguments.config), arguments.output,
+                      backbone=arguments.backbone, backbones=read_configuration(arguments.backbones),
+                      seed=arguments.seed, resume=arguments.resume,
+                      calibration_only=arguments.command == "calibrate")
+    fields = ("parameter_version", "calibrated_programs") if arguments.command == "calibrate" else (
+        "parameter_version", "decision_gap", "stopping_reason")
+    print(json.dumps({**{key: report[key] for key in fields}, "output": arguments.output}))
 
 
 if __name__ == "__main__":

@@ -23,6 +23,41 @@ def merge(first, second):
     return result
 
 
+def resolve_case(case, backbones, backbone=None, seed=None):
+    """Resolve model selection while preserving graph and parameter-owner scopes."""
+    case = copy.deepcopy(case)
+    selected_seed = case.get("seed", 0) if seed is None else seed
+    if (isinstance(selected_seed, bool) or not isinstance(selected_seed, int)
+            or not 0 <= selected_seed < 2 ** 32):
+        raise ValueError("The run seed is an integer in [0, 2**32)")
+    if seed is not None:
+        case["seed"] = seed
+    owners = case.get("owners", {})
+    if backbone is not None:
+        if backbone not in backbones or not owners:
+            raise ValueError("Select a declared backbone for the case's model owners")
+        preset = backbones[backbone]
+        for name, specification in owners.items():
+            if (specification.get("revision") is not None and specification.get("checkpoint")
+                    not in (None, preset["checkpoint"])):
+                raise ValueError("A pinned model revision belongs to the selected backbone")
+            owners[name] = merge(preset, specification)
+            owners[name]["checkpoint"] = preset["checkpoint"]
+    for specification in owners.values():
+        if not isinstance(specification.get("checkpoint"), str) or not specification["checkpoint"]:
+            raise ValueError("Every parameter owner has a model checkpoint or selected backbone")
+    checkpoints = {specification["checkpoint"] for specification in owners.values()}
+    if len(checkpoints) == 1:
+        checkpoint = next(iter(checkpoints))
+        name = next((key for key, value in backbones.items() if value["checkpoint"] == checkpoint), checkpoint)
+    elif checkpoints:
+        from .storage import fingerprint
+        name = "heterogeneous-" + fingerprint(sorted(checkpoints))[:12]
+    else:
+        name = "native"
+    return case, name
+
+
 def validate_case(case, configuration):
     graph = Graph.from_record(case["graph"])
     owners = {node.owner for node in graph.nodes if node.kind == "model"}

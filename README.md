@@ -24,11 +24,27 @@ quality.
 
 ## Algorithm Flow
 
-To couple node adaptation with executable graph evolution, we optimize their shared downstream utility.
+To couple node adaptation with executable graph evolution, we optimize their
+shared downstream utility. CoG-TTT first constructs legal graph-dependent
+supervision, then proposes node updates, and finally selects parameter versions
+and collaboration graphs using certified decision bounds.
 
 ![CoG-TTT overview](assets/overview.png)
 
 **Figure 1.** Graph-coupled adaptation during Web misinformation research, illustrated with a DeepResearch Bench question on need for closure and misinformation acceptance. Citation tracing supplies evidence for downstream analysis. Paired continuations guide node training, while joint selection updates the execution graph for subsequent research stages.
+
+1. **Graph-Coupled Test-Time Training Design.** First, we compare legal execution
+   continuations from a common task checkpoint to estimate the downstream value of
+   alternative node outputs. These comparisons produce confidence-aware preferences
+   and verified supervision for graph-conditioned gradient updates.
+
+2. **Certificate-Aware Joint Decision Design.** Next, witness-guided optimization
+   evaluates candidate parameter versions together with feasible future graphs,
+   allocating computation to informative probes, node training, and execution.
+
+3. **Training-Induced Graph Evolution.** Finally, accepted updates trigger
+   version-aware revaluation of affected graph interactions, and the resulting graph
+   choices guide subsequent training. A shared task objective couples the two decisions.
 
 ![Algorithm 1](assets/algorithm.png)
 
@@ -49,37 +65,56 @@ To couple node adaptation with executable graph evolution, we optimize their sha
 ### Environment Setup
 
 ```bash
-conda create -n cog-ttt python=3.10 -y
+conda env create -f environment.yml
 conda activate cog-ttt
 pip install -e '.[models]'
 ```
 
 ### Data Preparation
 
-The run command reads `task.json`, which specifies the task, model, environment,
-initial graph, and calibration inputs. The [task format](docs/environment.md)
-describes these inputs.
+The experiments use [MARBLE](https://github.com/ulab-uiuc/MARBLE),
+[MLGym-Bench](https://github.com/facebookresearch/MLGym),
+[DeepResearch Bench](https://github.com/Ayanami0730/deep_research_bench),
+[ToolHop](https://huggingface.co/datasets/bytedance-research/ToolHop),
+[WebShop](https://github.com/princeton-nlp/WebShop),
+[WebWalkerQA](https://github.com/Alibaba-NLP/DeepResearch/tree/main/WebAgent/WebWalker),
+and [xbench-DeepSearch-2505](https://github.com/xbench-ai/xbench-evals).
+
+Prepare `inputs/task.json` with the task, native environment, initial execution
+graph, parameter owners, and calibration inputs. The
+[task format](docs/environment.md#case-files) describes these inputs.
 
 ## Training
 
-Run joint optimization. The command collects the configured calibration
-measurements before search:
+Select a backbone:
+
+- **Qwen3-8B**: `MODEL=qwen`
+- **Llama-3.1-8B-Instruct**: `MODEL=llama`
+- **Gemma-3-12B-it**: `MODEL=gemma`
+
+Run joint node training and graph optimization:
 
 ```bash
-python -m cog_ttt run --case task.json --config configs/paper.yaml \
-  --output results/task
+python -m cog_ttt run --case inputs/task.json --config configs/paper.yaml \
+  --backbone "${MODEL}" --output "results/${MODEL}/task"
 ```
+
+To resume an interrupted run, add `--resume` to the same command.
 
 ## Evaluation
 
-Evaluate the final execution and summarize the scores:
+Evaluate the completed task with its native evaluator:
 
 ```bash
-python -m cog_ttt evaluate --case task.json --run results/task \
-  --backbone qwen --output results/final.jsonl
+python -m cog_ttt evaluate --run "results/${MODEL}/task" \
+  --output "results/${MODEL}/scores.jsonl"
+```
 
-python -m cog_ttt summarize --records results/final.jsonl \
-  --output results/summary.json
+Aggregate the benchmark evaluations after completing all tasks and seeds:
+
+```bash
+python -m cog_ttt summarize --records "results/${MODEL}/scores.jsonl" \
+  --output "results/${MODEL}/summary.json"
 ```
 
 ## License
