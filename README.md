@@ -24,18 +24,13 @@ quality.
 
 ## Algorithm Flow
 
-The joint procedure coordinates candidate generation, certified graph search, and budget-aware execution.
-
-1. Initialize null program, feasible incumbent, and execution reserve.
-2. While a legal probe or pilot fits the remaining budget, propose graphs and graph-conditioned training programs. Materialize updates on reversible copies; charge their costs.
-3. Validate legal pairs and update anytime score intervals. Build certified graph bounds or range fallbacks. Select the feasible program-graph pair with the largest lower score bound and compute the reported gap.
-4. Screen candidates using certified bounds. Stop when the gap is within tolerance and the declared family is complete.
-5. If the candidate passes conservative acceptance, accept its version and invalidate affected graph intervals. Otherwise, retain the accepted parameters and probe the next legal witness.
-6. Execute a feasible continuation and report the gap and all costs.
+To couple node adaptation with executable graph evolution, we optimize their shared downstream utility.
 
 ![CoG-TTT overview](assets/overview.png)
 
 **Figure 1.** Graph-coupled adaptation during Web misinformation research, illustrated with a DeepResearch Bench question on need for closure and misinformation acceptance. Citation tracing supplies evidence for downstream analysis. Paired continuations guide node training, while joint selection updates the execution graph for subsequent research stages.
+
+![Algorithm 1](assets/algorithm.png)
 
 ## Results
 
@@ -51,24 +46,24 @@ The joint procedure coordinates candidate generation, certified graph search, an
 
 ![Component ablations from Table 2](assets/ablations.png)
 
+**Joint selection improves upon alternating optimization.** Using the same loss and feasible family, CoG-TTT improves the eight-metric average by 2.9 on Qwen3-8B, 2.6 on Gemma, and 2.4 on Llama. Joint validation can select an update whose benefit emerges in a different future graph, which helps explain the remaining advantage over sequential training and graph selection.
+
 ### Analysis
 
 ![Analysis from Figure 2](assets/analysis.png)
 
 **Figure 2.** Qwen3-8B diagnostics of witness ranking, decision gaps, interval coverage, and credit-decile gain. Curves show five-seed means; bands show one sample standard deviation.
 
+**Reliable credit tracks downstream benefit.** Figure 2c reports final interval coverage of 95.0%, 90.0%, and 85.0% for the three methods, respectively. CoG-TTT reaches the nominal 95% level under the stated certificate conditions. Figure 2d orders records by interaction credit. Its highest decile yields a gain of 3.41, compared with 0.18 in the lowest decile, with Spearman correlation 0.91. This alignment supports prioritizing records whose estimated effects survive subsequent execution.
+
 ## Getting Started
 
 ### Environment Setup
 
-Use Python 3.10 or later and install PyTorch for your system.
-
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e '.[models]' \
-  --index-url https://pypi.tuna.tsinghua.edu.cn/simple
-export HF_ENDPOINT=https://hf-mirror.com
+conda create -n cog-ttt python=3.10 -y
+conda activate cog-ttt
+pip install -e '.[models]'
 ```
 
 ### Data Preparation
@@ -77,7 +72,7 @@ The run command reads `task.json`, which specifies the task, model, environment,
 initial graph, and calibration inputs. The [task format](docs/environment.md)
 describes these inputs.
 
-### Training and Evaluation
+## Training
 
 Run joint optimization. The command collects the configured calibration
 measurements before search:
@@ -86,6 +81,8 @@ measurements before search:
 python -m cog_ttt run --case task.json --config configs/paper.yaml \
   --output results/task
 ```
+
+## Evaluation
 
 Evaluate the final execution and summarize the scores:
 
