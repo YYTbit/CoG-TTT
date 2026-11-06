@@ -186,7 +186,7 @@ class VersionStore:
                     state = self.candidates[identifier]["state"]
             owner.restore(state)
 
-    def accept(self, identifier):
+    def accept(self, identifier, activate=True):
         if identifier == "null":
             return None
         candidate = self.candidates[identifier]
@@ -197,7 +197,8 @@ class VersionStore:
         self.accepted_identities[owner] = candidate["state_identity"]
         self.version += 1
         self.candidates.clear()
-        self.activate()
+        if activate:
+            self.activate()
         return owner
 
     def save(self, directory):
@@ -219,7 +220,7 @@ class VersionStore:
         write_json(directory / "versions.json", record)
         return record
 
-    def restore(self, directory, record=None):
+    def restore(self, directory, record=None, activate=True):
         from .storage import fingerprint, read_json
         directory = Path(directory)
         record = read_json(directory / "versions.json") if record is None else record
@@ -238,4 +239,5 @@ class VersionStore:
             candidate.setdefault("state_identity", uuid.uuid4().hex)
         if any(value["base_version"] != self.version for value in self.candidates.values()):
             raise ValueError("Resumed candidates belong to the accepted parameter version")
-        self.activate()
+        if activate:
+            self.activate()

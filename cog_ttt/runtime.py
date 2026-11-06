@@ -14,6 +14,9 @@ from .storage import fingerprint, read_json, write_json
 from .training import Preference, VerifiedTarget, contrast_preference, train_program
 
 
+ACCOUNTING_VERSION = 2
+
+
 class Session:
     def __init__(self, case, configuration, worker, owners, directory, resume=False):
         self.case, self.configuration, self.worker, self.owners = case, configuration, worker, owners
@@ -31,9 +34,11 @@ class Session:
             self.state = read_json(self.directory / "state.json")
             if self.state["identity"] != self.identity:
                 raise ValueError("Resume requires the same task, graph, models, and configuration")
+            if not self.state.get("completed") and self.state.get("accounting_version") != ACCOUNTING_VERSION:
+                raise ValueError("An active checkpoint requires the same accounting protocol; use a new output directory")
             self.registry = ConfidenceRegistry.restore(self.state["confidence"])
             self.ledger = BudgetLedger.restore(self.state["ledger"])
-            self.versions.restore(self.directory / "parameters", self.state["parameters"])
+            self.versions.restore(self.directory / "parameters", self.state["parameters"], activate=False)
             for entry in self.ledger.entries:
                 if entry.get("status") == "reserved":
                     entry["status"] = "interrupted_charged_upper_bound"
@@ -49,7 +54,8 @@ class Session:
                 raise ValueError("An existing run requires --resume or a new output directory")
             self.registry = ConfidenceRegistry(configuration["confidence"]["delta"])
             self.ledger = BudgetLedger(self.budget["total_gpu_seconds"], self.budget["reserve_gpu_seconds"])
-            self.state = {"identity": self.identity, "checkpoint": worker.checkpoint(case["task"]),
+            self.state = {"identity": self.identity, "accounting_version": ACCOUNTING_VERSION,
+                          "checkpoint": worker.checkpoint(case["task"]),
                           "models": model_identities, "score_source": self.executor.score_source,
                           "probe_count": 0, "pilot_count": 0, "raw_costs": {"null": 0.0},
                           "program_status": {}, "credit": {}, "verified": {}, "data_version": None,
@@ -88,13 +94,23 @@ class Session:
             self.state["fit_roles"] = self.search.fit_roles
         write_json(self.directory / "state.json", self.state)
 
-    def action(self, stage, bound, function, program=None, final=False, result_key=None, external_required=False):
+    def action(self, stage, bound, function, program=None, final=False, result_key=None, external_required=False,
+               parameter_version=None):
+        if self.state.get("accounting_version") != ACCOUNTING_VERSION:
+            raise ValueError("A new action requires the current accounting protocol")
         index = self.ledger.reserve_action(stage, bound, final_execution=final, program=program,
                                            version=self.versions.version)
         self.save()
         try:
             with DeviceMeter(self.owners) as meter:
-                result = function()
+                # Version transfers belong to the same reserved, timed action.
+                try:
+                    if parameter_version is not None:
+                        self.versions.activate(parameter_version)
+                    result = function()
+                finally:
+                    if parameter_version not in (None, "null"):
+                        self.versions.activate()
             external = result.get("external_gpu_seconds", None if external_required else 0.0)
             observed = None if external is None else meter.gpu_seconds + external
             self.ledger.settle(index, observed, elapsed_seconds=meter.elapsed)
@@ -143,13 +159,9 @@ class Session:
         self.state["pending_probe"] = {"key": key, "action_id": len(self.ledger.entries), "program": program,
                                        "version": self.versions.version, "seed": seed, "graph": decision.bits,
                                        "before_count": len(self.registry.entries[key].scores)}
-        self.versions.activate(program)
-        try:
-            result = self.action(stage, bound, lambda: self.executor.run(decision, self.checkpoint, seed, budget,
-                                                                        injection=injection), program,
-                                 result_key="pending_probe_result")
-        finally:
-            self.versions.activate()
+        result = self.action(stage, bound, lambda: self.executor.run(decision, self.checkpoint, seed, budget,
+                                                                    injection=injection), program,
+                             result_key="pending_probe_result", parameter_version=program)
         return self.commit_probe()
 
     def recover_pending_probe(self):
@@ -306,14 +318,14 @@ class Session:
             self.state["program_status"][key] = {"status": "running"}
             self.state["raw_costs"][identifier] = 0.0
             graph = self.graph.decision(specification["graph"])
-            self.versions.activate()
             try:
                 result = self.action("training_pilot", bound,
                     lambda: train_program(self.owners[specification["owner"]], graph.identifier, self.checkpoint["task_state"],
                                           [Preference(**row) for row in self.state.get("preferences", [])],
                                           [VerifiedTarget(**row) for row in self.state.get("verified_records", [])],
                                           specification["steps"], specification["learning_rate"], self.configuration["training"],
-                                          int(self.case.get("seed", 0)) + self.state["pilot_count"]), identifier)
+                                          int(self.case.get("seed", 0)) + self.state["pilot_count"]), identifier,
+                                     parameter_version="null")
             except BaseException:
                 self.state["program_status"][key] = {"status": "failed"}
                 self.state["raw_costs"].pop(identifier, None)
@@ -356,7 +368,7 @@ class Session:
                           owner, self.case.get("global_hidden_state", False)),
                       reference_upper=reference["upper"], acceptance_tolerance=self.settings["acceptance_tolerance"])
         self.state["accepted"].append(report)
-        self.versions.accept(chosen["program"])
+        self.versions.accept(chosen["program"], activate=False)
         self.state["raw_costs"] = {"null": 0.0}
         self.search.version = self.versions.version
         self.search.calibrations = {}
@@ -412,9 +424,9 @@ class Session:
         evaluated = [pair for pair in result["pairs"] if pair["observations"]]
         result["frontier_gap"] = (max(0.0, max(pair["direct_upper"] for pair in evaluated) - chosen["lower"])
                                   if evaluated else None)
-        self.versions.activate()
         report = self.search.report(result)
         report.update(benchmark=self.case["benchmark"], task=self.case["task"], seed=int(self.case.get("seed", 0)),
+                      accounting_version=ACCOUNTING_VERSION,
                       stopping_reason=reason, declared_program_family_complete=self.family_complete(),
                       accepted_versions=self.state["accepted"], probe_count=self.state["probe_count"],
                       pilot_count=self.state["pilot_count"],
@@ -425,7 +437,7 @@ class Session:
         execution = self.action("final_execution", self.graph.cost(chosen["graph"]) * self.settings["cost_quantum_gpu_seconds"],
                      lambda: self.executor.run(chosen["graph"], self.checkpoint, int(self.case.get("seed", 0)),
                                                execution_budget, online=False), final=True,
-                     result_key="final_execution")
+                     result_key="final_execution", parameter_version="null")
         report.update(ledger=self.ledger.record(), execution=execution)
         write_json(self.directory / "result.json", report)
         self.state["completed"] = True
