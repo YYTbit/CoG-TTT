@@ -33,6 +33,8 @@ shared downstream utility. CoG-TTT first constructs legal graph-dependent
 supervision, then proposes node updates, and finally selects parameter versions
 and collaboration graphs using certified decision bounds.
 
+The algorithm flow includes:
+
 1. **Graph-Coupled Test-Time Training Design.** To train nodes toward downstream
    task requirements, we compare two outputs of a trainable operation at the same
    legal checkpoint. Verified targets require a check by the environment's tool
@@ -54,6 +56,8 @@ and collaboration graphs using certified decision bounds.
    graph estimates associated with its actual candidate model version. Accepted
    updates initiate new versioned certification; a budget-limited run returns the
    feasible incumbent and its reported gap.
+
+The pseudocode for joint node training and graph optimization is as follows:
 
 ![Algorithm 1](assets/algorithm.png)
 
