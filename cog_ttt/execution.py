@@ -78,11 +78,11 @@ class GraphExecutor:
                 else:
                     output = self.owners[node.owner].sample(history, seed=node_seed,
                                                            max_tokens=node.settings.get("max_output_tokens"),
-                                                           temperature=node.settings.get("temperature", 1.0))
+                                                           temperature=node.settings.get("temperature"))
                 row = {"node": name, "kind": "model", "owner": node.owner, "history": history,
                        "output": output, "injected": name == injected_node}
             # Resource telemetry stays in the trace, outside downstream prompts and scoring.
-            outputs[name] = ({key: output[key] for key in ("text", "token_ids") if key in output}
+            outputs[name] = ({key: output[key] for key in ("text", "token_ids", "reasoning_complete") if key in output}
                              if node.kind == "model" else output)
             trace.append(row)
         result = {"graph": decision.bits, "task_state": checkpoint["task_state"], "trace": trace,

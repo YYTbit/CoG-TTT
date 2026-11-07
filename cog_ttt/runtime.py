@@ -244,7 +244,9 @@ class Session:
             row = next(row for row in anchor["trace"] if row["node"] == node.name)
             output_bound = node.cost * self.settings["cost_quantum_gpu_seconds"]
             alternative = self.action("credit_alternative", output_bound,
-                          lambda: self.owners[node.owner].sample(row["history"], seed=prefix_seed + 1))
+                          lambda: self.owners[node.owner].sample(row["history"], seed=prefix_seed + 1,
+                              max_tokens=node.settings.get("max_output_tokens"),
+                              temperature=node.settings.get("temperature")))
             self.state["credit"][record_key] = {"history": row["history"], "first": row["output"],
                                                "second": alternative, "prefix_seed": prefix_seed}
             self.save()

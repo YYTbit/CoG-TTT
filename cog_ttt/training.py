@@ -118,7 +118,7 @@ def train_program(owner, graph, task_state, preferences, verified, steps, learni
             contexts = [row.history for row, _ in retained] + [row.history for row in verified]
             samples, reference = [], []
             if settings.get("lambda_kl", 0.1) > 0:
-                samples = [owner.sample(value, seed + 1000 * step + index)
+                samples = [owner.sample(value, seed + 1000 * step + index, temperature=1.0)
                            for index, value in enumerate(contexts)]
                 candidate = owner.snapshot()
                 owner.restore(accepted)

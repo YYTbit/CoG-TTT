@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cog-ttt"
-version = "1.0.0"
+version = "1.1.0"
 description = "CoG-TTT: Joint Test-Time Training for Evolving Agentic Graphs"
 readme = "README.md"
 requires-python = ">=3.10"

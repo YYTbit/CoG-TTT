@@ -23,7 +23,7 @@ def local_checkpoint_digest(directory):
     return digest.hexdigest()
 
 
-def model_identity(specification, configuration, tokenizer):
+def model_identity(specification, configuration, tokenizer, generation_config=None):
     checkpoint = specification["checkpoint"]
     local = Path(checkpoint).is_dir()
     revision = getattr(configuration, "_commit_hash", None) or specification.get("revision")
@@ -37,6 +37,11 @@ def model_identity(specification, configuration, tokenizer):
             libraries[name] = importlib.metadata.version(name)
         except importlib.metadata.PackageNotFoundError:
             pass
+    generation = generation_config.to_dict() if generation_config is not None else None
+    if generation is not None:
+        generation = {key: value for key, value in generation.items()
+                      if key not in ("_from_model_config", "transformers_version")}
     return {"checkpoint": checkpoint, "revision": revision,
             "local_content_sha256": local_checkpoint_digest(checkpoint) if local else None,
-            "tokenizer_sha256": fingerprint(tokenizer_record), "libraries": libraries}
+            "tokenizer_sha256": fingerprint(tokenizer_record), "libraries": libraries,
+            "generation_sha256": fingerprint(generation), "generation_protocol": "native-generation-v1"}

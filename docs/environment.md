@@ -23,6 +23,9 @@ The factory accepts a configuration mapping and returns an object implementing t
 
 A case with several available sources selects one `benchmark.score_source` before validation. That source remains constant throughout the run and resume. Model identities retain resolved immutable checkpoint revisions, tokenizer fingerprints, library versions, and content hashes for local checkpoints.
 
+Environment request deadlines include transmission and the complete JSON response.
+A timeout invalidates the connection; subsequent requests require a new worker.
+
 A verified target carries `passed: true`, a native `tool_result_id`, the matching `task_state`, and `source` equal to `tool`, `execution_check`, or `api_validation`. Targets originate from permitted execution checks. Independent final answers and judge labels remain in `final_evaluate`. The online runner never calls that operation.
 
 ## Case files
@@ -38,6 +41,12 @@ Benchmark cases use `data_kind: benchmark`, a benchmark identifier from [the pro
 - `budget` specifies `reserve_gpu_seconds`, `pilot_gpu_seconds`, and `verification_gpu_seconds`. The default total cap is 25,600 GPU-seconds. The reserve covers supplied execution witnesses. Optional `search` overrides are recorded with the case.
 
 The case's `seed` controls model initialization and continuation sampling; `--seed` overrides it for a run. An owner can declare its own initialization `seed`. `run.json` stores the resolved task, model selection, method configuration, and immutable model identities. Resuming uses the same inputs and `--resume`, loading the recorded remote model revision. Local checkpoint contents remain subject to identity verification. Final evaluation reads this record and the completed execution, without loading model weights again. An optional evaluation `--backbone` checks the recorded selection. Earlier runs can be evaluated with their original `--case` and `--config`.
+
+Node generation inherits the backbone's native generation configuration and chat
+template. Owners accept `generation` sampling overrides and `chat_template_kwargs`.
+An explicit node `temperature` samples the raw model policy at that temperature;
+zero selects greedy decoding.
+Model identities bind the native generation configuration and decoding protocol.
 
 ## Development calibration
 
@@ -70,7 +79,7 @@ The objective attributes measured training and candidate-validation cost to each
 
 The initial graph pool uses a seeded 70/30 fit/verification partition with integer rounding. Additional legal witnesses use a stable seeded hash split with a 70% fit fraction, independent of discovery order and observed scores. Assignments are persisted. The uniform residual allowance uses the anytime radius and a certified Hamming covering bound. The 95th-percentile residual is diagnostic. Without a calibration plan, coefficient radii remain unbounded unless `coefficient_residual_bound` supplies a structural modeling assumption and the fit design is identifiable. DP values upper-bound the relaxed graph family; every executable witness is separately checked against the original constraints. Each certified DP report includes its feasible-witness relaxation-gap upper bound. An empty evaluated frontier is reported as unavailable.
 
-The sequence KL term uses current-policy completion samples and a score-function gradient against the accepted reference. Sequence log probabilities sum the provided target tokens. Candidate optimization uses PyTorch SGD with momentum and weight decay both set to zero, applying the stated gradient step with the declared learning rate. Snapshot files contain the trainable owner scope. Training with full parameters requires memory for model weights, gradients, and activations.
+The sequence KL term uses full-support current-policy completion samples at temperature 1 and a score-function gradient against the accepted reference. Sequence log probabilities sum the provided target tokens. Candidate optimization uses PyTorch SGD with momentum and weight decay both set to zero, applying the stated gradient step with the declared learning rate. Snapshot files contain the trainable owner scope. Training with full parameters requires memory for model weights, gradients, and activations.
 
 Graph-decision intervals retain the paper's anytime radius. Training credit uses the conditional Hoeffding mean radius `sqrt(log(2 / delta_a_n) / (2 * n))` for bounded continuation scores, using the same persistent mean identifiers and failure allocations. Two-mean and four-mean contrast radii sum the corresponding mean radii. The paper requires valid credit radii; this implementation uses the bounded-score estimator above. This stronger mean event also covers the wider direct interval under the shared failure budget.
 

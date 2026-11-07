@@ -1,3 +1,4 @@
+import copy
 import inspect
 import os
 import tempfile
@@ -11,10 +12,30 @@ class CausalOwner:
     def __init__(self, name, model, tokenizer, settings=None):
         self.name, self.model, self.tokenizer = name, model, tokenizer
         self.settings = dict(settings or {})
+        for key in ("generation", "chat_template_kwargs"):
+            if not isinstance(self.settings.get(key, {}), dict):
+                raise ValueError("Generation and chat-template settings are mappings")
+        allowed = {"do_sample", "temperature", "top_p", "top_k", "min_p", "typical_p",
+                   "epsilon_cutoff", "eta_cutoff", "repetition_penalty", "no_repeat_ngram_size"}
+        if set(self.settings.get("generation", {})) - allowed:
+            raise ValueError("Generation overrides use supported native sampling settings")
+        reserved = {"tokenize", "add_generation_prompt", "return_tensors", "return_dict"}
+        if reserved & set(self.settings.get("chat_template_kwargs", {})):
+            raise ValueError("Chat-template overrides preserve the tokenization interface")
+        self.template_kwargs = dict(self.settings.get("chat_template_kwargs", {}))
+        if "enable_thinking" in self.settings:
+            if ("enable_thinking" in self.template_kwargs
+                    and self.template_kwargs["enable_thinking"] != self.settings["enable_thinking"]):
+                raise ValueError("Thinking-mode settings agree with the chat-template override")
+            self.template_kwargs["enable_thinking"] = self.settings["enable_thinking"]
+        if "enable_thinking" in self.template_kwargs and type(self.template_kwargs["enable_thinking"]) is not bool:
+            raise ValueError("enable_thinking is a boolean")
         self.model.eval()
         base = model.get_base_model() if hasattr(model, "get_base_model") else model
         self.supports_logit_limit = "logits_to_keep" in inspect.signature(base.forward).parameters
         self.latest_usage = {}
+        configuration = getattr(model.config, "text_config", model.config)
+        self.context_tokens = self.settings.get("context_tokens", getattr(configuration, "max_position_embeddings", 32768))
 
     @classmethod
     def from_pretrained(cls, name, specification, seed=0):
@@ -49,7 +70,7 @@ class CausalOwner:
         tokenizer = AutoTokenizer.from_pretrained(checkpoint, revision=revision)
         from .identity import model_identity
         owner = cls(name, model, tokenizer, specification)
-        owner.identity = model_identity(specification, configuration, tokenizer)
+        owner.identity = model_identity(specification, configuration, tokenizer, model.generation_config)
         return owner
 
     def parameters(self):
@@ -70,7 +91,7 @@ class CausalOwner:
                     raise ValueError("A parameter version has an incompatible shape")
                 parameter.copy_(state[name].to(device=parameter.device, dtype=parameter.dtype))
 
-    def encode(self, history, requirement=None):
+    def messages(self, history, requirement=None):
         messages = [{"role": "user", "content": history}] if isinstance(history, str) else [dict(row) for row in history]
         if not messages or any(row.get("role") not in {"system", "user", "assistant", "tool"}
                                or not isinstance(row.get("content"), str) for row in messages):
@@ -84,17 +105,64 @@ class CausalOwner:
             if not messages or messages[0]["role"] != "user":
                 raise ValueError("Gemma histories contain a user request after the system instruction")
             messages[0]["content"] = system + "\n\n" + messages[0]["content"]
-        identifiers = self.tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True,
-                                                          enable_thinking=self.settings.get("enable_thinking", False))
-        if not identifiers or len(identifiers) > self.settings.get("context_tokens", 32768):
+        return messages
+
+    def encode(self, history, requirement=None):
+        identifiers = self.tokenizer.apply_chat_template(self.messages(history, requirement), tokenize=True,
+                                                          add_generation_prompt=True, **self.template_kwargs)
+        if not identifiers or len(identifiers) > self.context_tokens:
             raise ValueError("The complete node input exceeds the configured context window")
         return tuple(identifiers)
+
+    def reasoning_prefix(self, history, requirement=None):
+        vocabulary = self.tokenizer.get_vocab() if hasattr(self.tokenizer, "get_vocab") else {}
+        if not {"<think>", "</think>"}.issubset(vocabulary):
+            return False
+        messages = self.messages(history, requirement)
+        before = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False,
+                                                     **self.template_kwargs)
+        after = self.tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True,
+                                                    **self.template_kwargs)
+        suffix = after[len(before):] if after.startswith(before) else ""
+        return suffix.rfind("<think>") > suffix.rfind("</think>")
+
+    def generation_config(self, temperature=None):
+        from transformers import GenerationConfig
+        native = self.model.generation_config
+        if temperature is None:
+            settings = copy.deepcopy(native)
+            unused = settings.update(**self.settings.get("generation", {}))
+            if unused:
+                raise ValueError("Unknown native generation settings")
+        else:
+            if not np.isfinite(temperature) or temperature < 0:
+                raise ValueError("Node generation uses a finite nonnegative temperature")
+            # Explicit temperatures retain the full-support policy used by sequence KL sampling.
+            settings = GenerationConfig(do_sample=temperature > 0, temperature=temperature if temperature > 0 else 1.0,
+                                        top_k=0, eos_token_id=native.eos_token_id,
+                                        bos_token_id=native.bos_token_id, pad_token_id=native.pad_token_id)
+        if settings.num_return_sequences != 1:
+            raise ValueError("A node returns one continuation")
+        if settings.eos_token_id is None:
+            settings.eos_token_id = self.tokenizer.eos_token_id
+        if settings.pad_token_id is None:
+            settings.pad_token_id = (self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None
+                                     else self.tokenizer.eos_token_id)
+        settings.validate()
+        return settings
 
     def log_probability(self, history, target, requirement=None):
         import torch
         prompt = self.encode(history, requirement)
-        generated = tuple(target["token_ids"]) if isinstance(target, dict) else tuple(self.tokenizer.encode(target, add_special_tokens=False))
-        if not generated or len(prompt) + len(generated) > self.settings.get("context_tokens", 32768):
+        if isinstance(target, dict):
+            generated = tuple(target["token_ids"])
+            if "prompt_ids" in target and tuple(target["prompt_ids"]) != prompt:
+                raise ValueError("Recorded node outputs retain their generation-time prompt")
+        else:
+            if self.reasoning_prefix(history, requirement):
+                target = "</think>\n\n" + target
+            generated = tuple(self.tokenizer.encode(target, add_special_tokens=False))
+        if not generated or len(prompt) + len(generated) > self.context_tokens:
             raise ValueError("A complete training sequence exceeds the declared context window")
         device = self.model.get_input_embeddings().weight.device
         identifiers = torch.tensor([prompt + generated], dtype=torch.long, device=device)
@@ -107,18 +175,18 @@ class CausalOwner:
         labels = torch.tensor(generated, dtype=torch.long, device=logits.device)
         return torch.log_softmax(logits, dim=-1).gather(1, labels[:, None]).sum()
 
-    def sample(self, history, seed=0, max_tokens=None, temperature=1.0):
+    def sample(self, history, seed=0, max_tokens=None, temperature=None):
         import time
         import torch
-        if not np.isfinite(temperature) or temperature < 0:
-            raise ValueError("Node generation uses a finite nonnegative temperature")
+        settings = self.generation_config(temperature)
         prompt = self.encode(history)
         requested = self.settings.get("max_output_tokens", 256) if max_tokens is None else max_tokens
         if isinstance(requested, bool) or int(requested) != requested:
             raise ValueError("Generation limits are positive integer token counts")
         cap = int(requested)
-        if cap < 1 or len(prompt) + cap > self.settings.get("context_tokens", 32768):
+        if cap < 1 or len(prompt) + cap > self.context_tokens:
             raise ValueError("The input and output budget exceed the declared node context")
+        settings.max_new_tokens = cap
         device = self.model.get_input_embeddings().weight.device
         identifiers = torch.tensor([prompt], dtype=torch.long, device=device)
         devices = sorted({parameter.device.index for parameter in self.model.parameters() if parameter.device.type == "cuda"})
@@ -127,22 +195,35 @@ class CausalOwner:
         started = time.perf_counter()
         with torch.random.fork_rng(devices=devices), torch.no_grad():
             torch.manual_seed(int(seed))
-            arguments = {"do_sample": temperature > 0, "max_new_tokens": cap, "use_cache": True,
-                         "pad_token_id": self.tokenizer.pad_token_id if self.tokenizer.pad_token_id is not None else self.tokenizer.eos_token_id}
-            if temperature > 0:
-                arguments.update(temperature=temperature, top_p=1.0, top_k=0)
-            output = self.model.generate(input_ids=identifiers, attention_mask=torch.ones_like(identifiers), **arguments)
+            output = self.model.generate(input_ids=identifiers, attention_mask=torch.ones_like(identifiers),
+                                         generation_config=settings, use_model_defaults=False)
         for selected in devices:
             torch.cuda.synchronize(selected)
         elapsed = time.perf_counter() - started
-        generated = tuple(output[0, len(prompt):].tolist())
+        sequences = output.sequences if hasattr(output, "sequences") else output
+        generated = tuple(sequences[0, len(prompt):].tolist())
         if not generated:
             raise ValueError("Node generation returned an empty token sequence")
         self.latest_usage = {"input_tokens": len(prompt), "output_tokens": len(generated),
                              "elapsed_seconds": elapsed, "gpu_seconds": elapsed * len(devices) if devices else None,
                              "meter": "synchronized_elapsed_times_participating_cuda_devices" if devices else "cpu_wall_time"}
-        return {"text": self.tokenizer.decode(generated, skip_special_tokens=True), "token_ids": generated,
-                "usage": self.latest_usage}
+        eos = settings.eos_token_id
+        eos = set(eos if isinstance(eos, (list, tuple)) else [eos]) if eos is not None else set()
+        response = list(generated)
+        vocabulary = self.tokenizer.get_vocab() if hasattr(self.tokenizer, "get_vocab") else {}
+        begin, end = vocabulary.get("<think>"), vocabulary.get("</think>")
+        starts = (begin is not None and begin in response and not self.tokenizer.decode(
+            response[:response.index(begin)], skip_special_tokens=False).strip())
+        complete = True
+        if self.reasoning_prefix(history) or starts:
+            complete = end is not None and end in response
+            response = response[response.index(end) + 1:] if complete else []
+        while response and response[-1] in eos:
+            response.pop()
+        return {"text": self.tokenizer.decode(response, skip_special_tokens=False), "token_ids": generated,
+                "prompt_ids": prompt, "reasoning_complete": complete,
+                "finish_reason": "stop" if generated[-1] in eos or len(generated) < cap else "length",
+                "generation_seed": int(seed), "generation": settings.to_dict(), "usage": self.latest_usage}
 
     def save_state(self, path, state):
         import torch
